@@ -11,6 +11,7 @@ import tensorflow as tf
 import numpy as np
 
 from config import cfg
+from misc_util import warn
 
 
 small_addon_for_BCE=1e-6
@@ -41,36 +42,77 @@ class MiddleAndRPN:
 
             #rpn
             #block1:
-            temp_conv = ConvMD(2, 128, 128, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv4')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv5')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv6')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv7')
-            deconv1 = Deconv2D(128, 256, 3, (1, 1), (0, 0), temp_conv, training=self.training, name='deconv1')
+            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv4')
+            # => batch, 400, 352, 128
+            temp_conv = tf.layers.max_pooling2d(temp_conv, pool_size = 2, strides = 2, name = 'maxpool1')
+            # => batch, 200, 176, 128
+            temp_conv = ConvMD(2, 128, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv5')
+            # => batch, 200, 176, 256
+            temp_conv = ConvMD(2, 256, 128, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv6')
+            # => batch, 200, 176, 128
+            temp_conv = ConvMD(2, 128, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv7')
+            # => batch, 200, 176, 256
+            temp_conv = tf.layers.max_pooling2d(temp_conv, pool_size = 2, strides = 2, name = 'maxpool2')
+            # => batch, 100, 88, 256
+            temp_conv = ConvMD(2, 256, 512, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv8')
+            # => batch, 100, 88, 512
+            temp_conv = ConvMD(2, 512, 128, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv9')
+            # => batch, 100, 88, 128
+            route_1 = ConvMD(2, 128, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv10')
+            # => batch, 100, 88, 256
 
-            #block2:
-            temp_conv = ConvMD(2, 128, 128, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv8')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv9')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv10')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv11')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv12')
-            temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv13')
-            deconv2 = Deconv2D(128, 256, 2, (2, 2), (0, 0), temp_conv, training=self.training, name='deconv2')
+            temp_conv = ConvMD(2, 256, 128, 1, (1, 1), (0, 0), route_1, training=self.training, name='conv11')
+            # => batch, 100, 88, 128
+            temp_conv = ConvMD(2, 128, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv12')
+            # => batch, 100, 88, 256
+            temp_conv = tf.layers.max_pooling2d(temp_conv, pool_size = 2, strides = 2, name = 'maxpool3')
+            # => batch, 50, 44, 256
+            temp_conv = ConvMD(2, 256, 512, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv13')
+            # => batch, 50, 44, 512
+            temp_conv = ConvMD(2, 512, 256, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv14')
+            # => batch, 50, 44, 256
+            route_2 = ConvMD(2, 256, 512, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv15')
+            # => batch, 50, 44, 512
 
-            #block3:
-            temp_conv = ConvMD(2, 128, 256, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv14')
-            temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv15')
-            temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv16')
-            temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv17')
-            temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv18')
-            temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv19')
-            deconv3 = Deconv2D(256, 256, 4, (4, 4), (0, 0), temp_conv, training=self.training, name='deconv3')
+            temp_conv = ConvMD(2, 256, 64, 3, (1, 1), (1, 1), route_1, training=self.training, name='conv16')
+            warn("shape: {}".format(np.shape(temp_conv)))
+            # => batch, 100, 88, 64
+            temp_conv = Reorg(2, temp_conv, name = 'reorg1')
+            # => batch, 50, 44, 256
+            temp_conv = tf.concat([temp_conv, route_2], axis = -1, name = 'concat1')
+            # => batch, 50, 44, 768
+            temp_conv = ConvMD(2, 768, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv17')
+            # => batch, 50, 44, 128
+            p_map = ConvMD(2, 128, 2, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv18')
+            r_map = ConvMD(2, 128, 14, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv19')
 
-            #final:
-            temp_conv = tf.concat([deconv3, deconv2, deconv1], -1)
-            #Probability score map, scale = [None, 200/100, 176/120, 2]
-            p_map = ConvMD(2, 768, 2, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv20')
-            #Regression(residual) map, scale = [None, 200/100, 176/120, 14]
-            r_map = ConvMD(2, 768, 14, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv21')
+
+
+
+            # #block2:
+            # temp_conv = ConvMD(2, 128, 128, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv8')
+            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv9')
+            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv10')
+            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv11')
+            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv12')
+            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv13')
+            # deconv2 = Deconv2D(128, 256, 2, (2, 2), (0, 0), temp_conv, training=self.training, name='deconv2')
+
+            # #block3:
+            # temp_conv = ConvMD(2, 128, 256, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv14')
+            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv15')
+            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv16')
+            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv17')
+            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv18')
+            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv19')
+            # deconv3 = Deconv2D(256, 256, 4, (4, 4), (0, 0), temp_conv, training=self.training, name='deconv3')
+
+            # #final:
+            # temp_conv = tf.concat([deconv3, deconv2, deconv1], -1)
+            # #Probability score map, scale = [None, 200/100, 176/120, 2]
+            # p_map = ConvMD(2, 768, 2, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv20')
+            # #Regression(residual) map, scale = [None, 200/100, 176/120, 14]
+            # r_map = ConvMD(2, 768, 14, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv21')
             #softmax output for positive anchor and negative anchor, scale = [None, 200/100, 176/120, 1]
             self.p_pos = tf.sigmoid(p_map)
             self.output_shape = [cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH]
@@ -100,6 +142,43 @@ def smooth_l1(deltas, targets, sigma=3.0):
     smooth_l1 = smooth_l1_add
     
     return smooth_l1
+
+def Reorg(stride, x, name='reorg'):
+    with tf.variable_scope(name) as scope:
+        warn("shape: {}".format(np.shape(x)))
+        batch, height, width, channel = np.shape(x)
+        # => batch * 100 * 88 * 64
+        warn("{} {} {} {}".format(batch, height, width, channel))
+        x = tf.reshape(x, [-1, height/stride, stride, width/stride, stride, channel])
+        warn("shape: {}".format(np.shape(x)))
+
+        # => batch * 50 * 2 * 44 * 2 * 64
+        x = tf.transpose(x, perm = [0, 1, 3, 2, 4, 5])
+        warn("shape: {}".format(np.shape(x)))
+
+        # => batch * 50 * 44 * 2 * 2 * 64 
+        x = tf.reshape(x, [-1, height/stride, width/stride, 4*64])
+        warn("shape: {}".format(np.shape(x)))
+
+        # => batch * 50 * 44 * 256
+        return x
+
+        #     temp_conv = tf.reshape(temp_conv, [-1, cfg.INPUT_HEIGHT, cfg.INPUT_WIDTH, 128])
+
+        # B = x.data.size(0)
+        # C = x.data.size(1)
+        # H = x.data.size(2)
+        # W = x.data.size(3)
+        # assert(H % stride == 0)
+        # assert(W % stride == 0)
+        # ws = stride
+        # hs = stride
+        # x = x.view(B, C, H/hs, hs, W/ws, ws).transpose(3,4).contiguous()
+        # x = x.view(B, C, H/hs*W/ws, hs*ws).transpose(2,3).contiguous()
+        # x = x.view(B, C, hs*ws, H/hs, W/ws).transpose(1,2).contiguous()
+        # x = x.view(B, hs*ws*C, H/hs, W/ws)
+        # return x
+
 
 
 def ConvMD(M, Cin, Cout, k, s, p, input, training=True, name='conv'):

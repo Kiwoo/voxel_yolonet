@@ -65,13 +65,28 @@ class FeatureNet(object):
             x = self.batch_norm.apply(x, self.training)
             return tf.reduce_max(x, axis=0)
 
-        # [ΣK, 128]
-        voxelwise = tf.map_fn(
-            compute,
-            (self.feature, self.number),
-            dtype=tf.float32,
-            parallel_iterations=1024,
-            swap_memory=True)
+        def compute_batch(packed):
+            # feature: [35/45, 7], number: scalar
+            feature, number = packed
+            # Use only non-empty points as input, notice that in the paper,
+            # the part of output corresponding to empty points are zeroed
+            x = tf.reshape(feature,[-1,7])
+            x = self.vfe1.apply(x, self.training)
+            x = self.vfe2.apply(x, self.training)
+            x = self.dense.apply(x)
+            x = self.batch_norm.apply(x, self.training)
+            x = tf.reshape(x,[-1,cfg.VOXEL_POINT_COUNT, 128])
+            return tf.reduce_max(x, axis=1)
+
+        voxelwise = compute_batch((self.feature, self.number))
+
+        # # [ΣK, 128]
+        # voxelwise = tf.map_fn(
+        #     compute,
+        #     (self.feature, self.number),
+        #     dtype=tf.float32,
+        #     parallel_iterations=1024,
+        #     swap_memory=True)
 
         # car: [N * 10 * 400 * 352 * 128]
         # pedestrian/cyclist: [N * 10 * 200 * 240 * 128]

@@ -543,6 +543,7 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
         anchors_standup_2d = anchor_to_standup_box2d(anchors_reshaped[:, [0,1,4,5]])
         # BOTTLENECK
         gt_standup_2d = corner_to_standup_box2d(center_to_corner_box2d(batch_gt_boxes3d[batch_id][:, [0,1,4,5,6]]))
+        # anchors => np.stack([cx, cy, cz, h, w, l, r], axis=-1)
 
         iou = bbox_overlaps(
                 np.ascontiguousarray(anchors_standup_2d).astype(np.float32), 
@@ -576,7 +577,7 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
         # ATTENTION: index_z should be np.array 
         targets[batch_id, index_x, index_y, np.array(index_z)*7] = (batch_gt_boxes3d[batch_id][id_pos_gt, 0] - anchors_reshaped[id_pos, 0]) / anchors_d[id_pos]
         targets[batch_id, index_x, index_y, np.array(index_z)*7+1] = (batch_gt_boxes3d[batch_id][id_pos_gt, 1] - anchors_reshaped[id_pos, 1]) / anchors_d[id_pos]
-        targets[batch_id, index_x, index_y, np.array(index_z)*7+2] = (batch_gt_boxes3d[batch_id][id_pos_gt, 2] - anchors_reshaped[id_pos, 2]) / anchors_d[id_pos]
+        targets[batch_id, index_x, index_y, np.array(index_z)*7+2] = (batch_gt_boxes3d[batch_id][id_pos_gt, 2] - anchors_reshaped[id_pos, 2]) / anchors_reshaped[id_pos, 3]
         targets[batch_id, index_x, index_y, np.array(index_z)*7+3] = np.log(batch_gt_boxes3d[batch_id][id_pos_gt, 3] / anchors_reshaped[id_pos, 3])
         targets[batch_id, index_x, index_y, np.array(index_z)*7+4] = np.log(batch_gt_boxes3d[batch_id][id_pos_gt, 4] / anchors_reshaped[id_pos, 4])
         targets[batch_id, index_x, index_y, np.array(index_z)*7+5] = np.log(batch_gt_boxes3d[batch_id][id_pos_gt, 5] / anchors_reshaped[id_pos, 5])

@@ -42,8 +42,8 @@ def main(_):
     warn("main start")
     with tf.Graph().as_default():
         global save_model_dir
-        with KittiLoader(object_dir=os.path.join(dataset_dir, 'training'), queue_size=4, require_shuffle=True, 
-                is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=0, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
+        with KittiLoader(object_dir=os.path.join(dataset_dir, 'training'), queue_size=50, require_shuffle=True, 
+                is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
         # , \KittiLoader(object_dir=os.path.join(dataset_dir, 'testing'), queue_size=50, require_shuffle=True, 
         #         is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, multi_gpu_sum=cfg.GPU_USE_COUNT) as valid_loader:
             
@@ -84,8 +84,8 @@ def main(_):
                 iter_per_epoch = int(len(train_loader)/(args.single_batch_size*cfg.GPU_USE_COUNT))
                 is_summary, is_summary_image, is_validate = False, False, False 
                 
-                summary_interval = 5
-                summary_image_interval = 2
+                summary_interval = 50
+                summary_image_interval = 10
                 save_model_interval = 50
                 validate_interval = 60
                 
