@@ -535,6 +535,7 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
     # print("w: {} l: {}".format(w, l))
     pos_equal_one = np.zeros((batch_size, w, l, 2))
     neg_equal_one = np.zeros((batch_size, w, l, 2))
+    conf_target = np.zeros((batch_size, w, l, 2))
     targets = np.zeros((batch_size, w, l, 14))
 
     for batch_id in range(batch_size):
@@ -572,12 +573,17 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
        
         # cal the target and set the equal one 
         index_x, index_y, index_z = np.unravel_index(id_pos, (w, l, 2))
+        # pos_equal_one[batch_id, index_x, index_y, index_z] = 1
+        # => WIP: pos_equl as confidence
         pos_equal_one[batch_id, index_x, index_y, index_z] = 1
+        conf_target[batch_id, index_x, index_y, index_z] = iou[id_pos, id_pos_gt]
+        # warn("{} {} {} {}".format(index_x, index_y, index_z, iou[id_pos, id_pos_gt]))
+        # warn(" iou check: {} {} {} {} {} {}".format(np.shape(iou[id_pos, id_pos_gt]), iou[id_pos, id_pos_gt], id_pos, id_pos_gt, index_x, index_y))
 
         # ATTENTION: index_z should be np.array 
         targets[batch_id, index_x, index_y, np.array(index_z)*7] = (batch_gt_boxes3d[batch_id][id_pos_gt, 0] - anchors_reshaped[id_pos, 0]) / anchors_d[id_pos]
         targets[batch_id, index_x, index_y, np.array(index_z)*7+1] = (batch_gt_boxes3d[batch_id][id_pos_gt, 1] - anchors_reshaped[id_pos, 1]) / anchors_d[id_pos]
-        targets[batch_id, index_x, index_y, np.array(index_z)*7+2] = (batch_gt_boxes3d[batch_id][id_pos_gt, 2] - anchors_reshaped[id_pos, 2]) / anchors_reshaped[id_pos, 3]
+        targets[batch_id, index_x, index_y, np.array(index_z)*7+2] = (batch_gt_boxes3d[batch_id][id_pos_gt, 2] - anchors_reshaped[id_pos, 2]) / cfg.ANCHOR_H
         targets[batch_id, index_x, index_y, np.array(index_z)*7+3] = np.log(batch_gt_boxes3d[batch_id][id_pos_gt, 3] / anchors_reshaped[id_pos, 3])
         targets[batch_id, index_x, index_y, np.array(index_z)*7+4] = np.log(batch_gt_boxes3d[batch_id][id_pos_gt, 4] / anchors_reshaped[id_pos, 4])
         targets[batch_id, index_x, index_y, np.array(index_z)*7+5] = np.log(batch_gt_boxes3d[batch_id][id_pos_gt, 5] / anchors_reshaped[id_pos, 5])
@@ -590,7 +596,7 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
         index_x, index_y, index_z = np.unravel_index(id_highest, (w, l, 2))
         neg_equal_one[batch_id, index_x, index_y, index_z] = 0
    
-    return pos_equal_one, neg_equal_one, targets 
+    return pos_equal_one, neg_equal_one, targets, conf_target 
 
 
 # BOTTLENECK
@@ -611,6 +617,64 @@ def delta_to_boxes3d(deltas, anchors, coordinate='lidar'):
     boxes3d[..., 6] = deltas[..., 6] + anchors_reshaped[..., 6]
     
     return boxes3d 
+
+def point_transform(points, tx, ty, tz, rx=0, ry=0, rz=0):
+    # Input:
+    #   points: (N, 3)
+    #   rx/y/z: in radians
+    # Output:
+    #   points: (N, 3)
+    N = points.shape[0]
+    points = np.hstack([points, np.ones((N, 1))])
+
+    mat1 = np.zeros((4, 4))
+    mat1[3, 0:3] = tx, ty, tz
+    points = np.matmul(points, mat1)
+
+    if rx != 0:
+        mat = np.zeros((4, 4))
+        mat[0, 0] = 1
+        mat[3, 3] = 1
+        mat[1, 1] = np.cos(rx)
+        mat[1, 2] = -np.sin(rx)
+        mat[2, 1] = np.sin(rx)
+        mat[2, 2] = np.cos(rx)
+        points = np.matmul(points, mat)
+
+    if ry != 0:
+        mat = np.zeros((4, 4))
+        mat[1, 1] = 1
+        mat[3, 3] = 1
+        mat[0, 0] = np.cos(ry)
+        mat[0, 2] = np.sin(ry)
+        mat[2, 0] = -np.sin(ry)
+        mat[2, 2] = np.cos(ry)
+        points = np.matmul(points, mat)
+
+    if rz != 0:
+        mat = np.zeros((4, 4))
+        mat[2, 2] = 1
+        mat[3, 3] = 1
+        mat[0, 0] = np.cos(rz)
+        mat[0, 1] = -np.sin(rz)
+        mat[1, 0] = np.sin(rz)
+        mat[1, 1] = np.cos(rz)
+        points = np.matmul(points, mat)
+
+    return points[:, 0:3]
+
+
+def box_transform(boxes, tx, ty, tz, rz=0):
+    # Input:
+    #   boxes: (N, 7) x y z h w l rz
+    # Output:
+    #   boxes: (N, 7) x y z h w l rz
+    boxes_corner = center_to_corner_box3d(boxes)  # (N, 8, 3)
+    for idx in range(len(boxes_corner)):
+        boxes_corner[idx] = point_transform(
+            boxes_corner[idx], tx, ty, tz, rz=rz)
+
+    return corner_to_center_box3d(boxes_corner)
 
 
 if __name__ == '__main__':

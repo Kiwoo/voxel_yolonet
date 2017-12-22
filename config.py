@@ -24,7 +24,7 @@ __C = edict()
 cfg = __C
 
 # for gpu allocation
-__C.GPU_AVAILABLE='2,3'
+__C.GPU_AVAILABLE='3'
 __C.GPU_USE_COUNT=len(__C.GPU_AVAILABLE.split(','))
 __C.GPU_MEMORY_FRACTION=1
 
@@ -36,7 +36,8 @@ if __C.DETECT_OBJ == 'Car':
     __C.X_MIN=0
     __C.X_MAX=70.4
     __C.VOXEL_X_SIZE=0.2 
-    __C.VOXEL_Y_SIZE=0.2 
+    __C.VOXEL_Y_SIZE=0.2
+    __C.VOXEL_Z_SIZE=0.4     
     __C.VOXEL_POINT_COUNT=35
     __C.INPUT_WIDTH=int((__C.X_MAX-__C.X_MIN)/__C.VOXEL_X_SIZE)
     __C.INPUT_HEIGHT=int((__C.Y_MAX-__C.Y_MIN)/__C.VOXEL_Y_SIZE)
@@ -50,6 +51,7 @@ else:
     __C.X_MAX=48 
     __C.VOXEL_X_SIZE=0.2 
     __C.VOXEL_Y_SIZE=0.2 
+    __C.VOXEL_Z_SIZE=0.4 
     __C.VOXEL_POINT_COUNT=45
     __C.INPUT_WIDTH=int((__C.X_MAX-__C.X_MIN)/__C.VOXEL_X_SIZE)
     __C.INPUT_HEIGHT=int((__C.Y_MAX-__C.Y_MIN)/__C.VOXEL_Y_SIZE)

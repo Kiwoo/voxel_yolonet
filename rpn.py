@@ -23,6 +23,9 @@ class MiddleAndRPN:
         self.training = training
         # groundtruth(target) - each anchor box, represent as △x, △y, △z, △l, △w, △h, rotation
         self.targets = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 14]) 
+        # => wip: add confidence(iou) here for yolo style
+        # => pos_equal_one is actually conf_mask in yolo code
+        self.conf_target = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 2]) 
         # postive anchors equal to one and others equal to zero(2 anchors in 1 position)
         self.pos_equal_one = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 2])
         self.pos_equal_one_sum = tf.placeholder(tf.float32, [None, 1, 1, 1])
@@ -118,6 +121,16 @@ class MiddleAndRPN:
             self.output_shape = [cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH]
         
             # TODO: sometime still get inf cls loss
+            # wip: change to yolo style
+
+            object_scale = 1.0
+            non_object_scale = 1.0
+
+
+            # self.cls_loss = object_scale * (self.pos_equal_one * tf.square(self.p_pos - self.conf_target)) / self.pos_equal_one_sum\
+            #                 + non_object_scale * self.neg_equal_one * tf.square(self.p_pos - self.conf_target) / self.neg_equal_one_sum
+            # self.cls_loss = tf.reduce_sum(self.cls_loss)
+
             self.cls_loss = alpha * (-self.pos_equal_one * tf.log(self.p_pos + small_addon_for_BCE)) / self.pos_equal_one_sum \
              + beta * (-self.neg_equal_one * tf.log(1 - self.p_pos + small_addon_for_BCE)) / self.neg_equal_one_sum
             self.cls_loss = tf.reduce_sum(self.cls_loss)

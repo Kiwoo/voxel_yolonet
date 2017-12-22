@@ -47,6 +47,9 @@ class RPN3D(object):
         self.vox_number = []
         self.vox_coordinate = [] 
         self.targets = [] 
+        # => wip: add confidence(iou) here for yolo style
+        # => pos_equal_one is actually conf_mask in yolo code
+        self.conf_target = []
         self.pos_equal_one = [] 
         self.pos_equal_one_sum = [] 
         self.pos_equal_one_for_reg = [] 
@@ -71,6 +74,7 @@ class RPN3D(object):
                     self.vox_number.append(feature.number)
                     self.vox_coordinate.append(feature.coordinate)
                     self.targets.append(rpn.targets)
+                    self.conf_target.append(rpn.conf_target)
                     self.pos_equal_one.append(rpn.pos_equal_one)
                     self.pos_equal_one_sum.append(rpn.pos_equal_one_sum)
                     self.pos_equal_one_for_reg.append(rpn.pos_equal_one_for_reg)
@@ -84,6 +88,7 @@ class RPN3D(object):
                     self.loss = rpn.loss
                     self.reg_loss = rpn.reg_loss
                     self.cls_loss = rpn.cls_loss
+                    # self.cls_loss1 = rpn.cls_loss1
                     self.params = tf.trainable_variables()
                     gradients = tf.gradients(self.loss, self.params)
                     clipped_gradients, gradient_norm = tf.clip_by_global_norm(gradients, max_gradient_norm)
@@ -153,7 +158,7 @@ class RPN3D(object):
         vox_number = data[3]
         vox_coordinate = data[4]
         print('train', tag)
-        pos_equal_one, neg_equal_one, targets = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
+        pos_equal_one, neg_equal_one, targets, conf_target = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
         pos_equal_one_for_reg = np.concatenate([np.tile(pos_equal_one[..., [0]], 7), np.tile(pos_equal_one[..., [1]], 7)], axis=-1)
         pos_equal_one_sum = np.clip(np.sum(pos_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None) 
         neg_equal_one_sum = np.clip(np.sum(neg_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None)
@@ -164,6 +169,9 @@ class RPN3D(object):
             input_feed[self.vox_number[idx]] = vox_number[idx]
             input_feed[self.vox_coordinate[idx]] = vox_coordinate[idx]
             input_feed[self.targets[idx]] = targets[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
+            # => wip: add confidence(iou) here for yolo style
+            # => pos_equal_one is actually conf_mask in yolo code
+            input_feed[self.conf_target[idx]] = conf_target[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one[idx]] = pos_equal_one[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_sum[idx]] = pos_equal_one_sum[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_for_reg[idx]] = pos_equal_one_for_reg[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
@@ -192,7 +200,7 @@ class RPN3D(object):
         vox_number = data[3]
         vox_coordinate = data[4]
         print('valid', tag)
-        pos_equal_one, neg_equal_one, targets = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
+        pos_equal_one, neg_equal_one, targets, conf_target = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
         pos_equal_one_for_reg = np.concatenate([np.tile(pos_equal_one[..., [0]], 7), np.tile(pos_equal_one[..., [1]], 7)], axis=-1)
         pos_equal_one_sum = np.clip(np.sum(pos_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None) 
         neg_equal_one_sum = np.clip(np.sum(neg_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None)
@@ -203,6 +211,8 @@ class RPN3D(object):
             input_feed[self.vox_number[idx]] = vox_number[idx]
             input_feed[self.vox_coordinate[idx]] = vox_coordinate[idx]
             input_feed[self.targets[idx]] = targets[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
+            input_feed[self.conf_target[idx]] = conf_target[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
+
             input_feed[self.pos_equal_one[idx]] = pos_equal_one[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_sum[idx]] = pos_equal_one_sum[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_for_reg[idx]] = pos_equal_one_for_reg[idx*self.single_batch_size:(idx+1)*self.single_batch_size]

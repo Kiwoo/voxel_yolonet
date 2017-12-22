@@ -21,6 +21,7 @@ from multiprocessing import Lock, Process, Queue as Queue, Value, Array, cpu_cou
 
 from config import cfg
 from misc_util import warn
+from preprocess import voxelize
 
 # for non-raw dataset
 class KittiLoader(object):
@@ -125,7 +126,7 @@ class KittiLoader(object):
                 raw_lidar.append(np.fromfile(self.f_lidar[load_index], dtype=np.float32).reshape((-1, 4)))
                 labels.append([line for line in open(self.f_label[load_index], 'r').readlines()])
                 tag.append(self.data_tag[load_index])
-                voxel.append(np.load(self.f_voxel[load_index]))
+                voxel.append(voxelize(self.f_lidar[load_index]))
                 t1 = time.time()
 
                 warn("load: {}".format(t1-t0))

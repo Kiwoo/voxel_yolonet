@@ -13,19 +13,29 @@ class VFELayer(object):
 
     def __init__(self, out_channels, name):
         super(VFELayer, self).__init__()
-        self.units = out_channels / 2
+        self.units = int(out_channels / 2)
         with tf.variable_scope(name, reuse=tf.AUTO_REUSE) as scope:
-            self.dense = tf.layers.Dense(self.units, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
-            self.batch_norm = tf.layers.BatchNormalization(name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
+            self.dense = tf.layers.Dense(
+                self.units, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
+            self.batch_norm = tf.layers.BatchNormalization(
+                name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
 
-    def apply(self, inputs, training):
+    def apply(self, inputs, mask, training):
+        # [K, T, 7] tensordot [7, units] = [K, T, units]
         pointwise = self.batch_norm.apply(self.dense.apply(inputs), training)
 
-        aggregated = tf.reduce_max(pointwise, axis=0, keep_dims=True)
+        #n [K, 1, units]
+        aggregated = tf.reduce_max(pointwise, axis=1, keep_dims=True)
 
-        repeated = tf.tile(aggregated, [tf.shape(pointwise)[0], 1])
+        # [K, T, units]
+        repeated = tf.tile(aggregated, [1, cfg.VOXEL_POINT_COUNT, 1])
 
-        concatenated = tf.concat([pointwise, repeated], axis=1)
+        # [K, T, 2 * units]
+        concatenated = tf.concat([pointwise, repeated], axis=2)
+
+        mask = tf.tile(mask, [1, 1, 2 * self.units])
+
+        concatenated = tf.multiply(concatenated, tf.cast(mask, tf.float32))
 
         return concatenated
 
@@ -37,7 +47,7 @@ class FeatureNet(object):
         self.training = training
 
         # scalar
-        self.batch_size = batch_size 
+        self.batch_size = batch_size
         # [ΣK, 35/45, 7]
         self.feature = tf.placeholder(
             tf.float32, [None, cfg.VOXEL_POINT_COUNT, 7], name='feature')
@@ -50,43 +60,20 @@ class FeatureNet(object):
         with tf.variable_scope(name, reuse=tf.AUTO_REUSE) as scope:
             self.vfe1 = VFELayer(32, 'VFE-1')
             self.vfe2 = VFELayer(128, 'VFE-2')
-            self.dense = tf.layers.Dense(128, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
-            self.batch_norm = tf.layers.BatchNormalization(name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
+            self.dense = tf.layers.Dense(
+                128, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
+            self.batch_norm = tf.layers.BatchNormalization(
+                name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
+        # boolean mask [K, T, 2 * units]
+        mask = tf.not_equal(tf.reduce_max(
+            self.feature, axis=2, keep_dims=True), 0)
+        x = self.vfe1.apply(self.feature, mask, self.training)
+        x = self.vfe2.apply(x, mask, self.training)
+        x = self.dense.apply(x)
+        x = self.batch_norm.apply(x, self.training)
 
-        def compute(packed):
-            # feature: [35/45, 7], number: scalar
-            feature, number = packed
-            # Use only non-empty points as input, notice that in the paper,
-            # the part of output corresponding to empty points are zeroed
-            x = feature[:number]
-            x = self.vfe1.apply(x, self.training)
-            x = self.vfe2.apply(x, self.training)
-            x = self.dense.apply(x)
-            x = self.batch_norm.apply(x, self.training)
-            return tf.reduce_max(x, axis=0)
-
-        def compute_batch(packed):
-            # feature: [35/45, 7], number: scalar
-            feature, number = packed
-            # Use only non-empty points as input, notice that in the paper,
-            # the part of output corresponding to empty points are zeroed
-            x = tf.reshape(feature,[-1,7])
-            x = self.vfe1.apply(x, self.training)
-            x = self.vfe2.apply(x, self.training)
-            x = self.dense.apply(x)
-            x = self.batch_norm.apply(x, self.training)
-            x = tf.reshape(x,[-1,cfg.VOXEL_POINT_COUNT, 128])
-            return tf.reduce_max(x, axis=1)
-
-        voxelwise = compute_batch((self.feature, self.number))
-
-        # # [ΣK, 128]
-        # voxelwise = tf.map_fn(
-        #     compute,
-        #     (self.feature, self.number),
-        #     dtype=tf.float32,
-        #     parallel_iterations=1024,
-        #     swap_memory=True)
+        # [ΣK, 128]
+        voxelwise = tf.reduce_max(x, axis=1)
 
         # car: [N * 10 * 400 * 352 * 128]
         # pedestrian/cyclist: [N * 10 * 200 * 240 * 128]
