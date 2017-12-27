@@ -25,7 +25,7 @@ class MiddleAndRPN:
         self.targets = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 14]) 
         # => wip: add confidence(iou) here for yolo style
         # => pos_equal_one is actually conf_mask in yolo code
-        self.conf_target = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 2]) 
+        # self.conf_target = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 2]) 
         # postive anchors equal to one and others equal to zero(2 anchors in 1 position)
         self.pos_equal_one = tf.placeholder(tf.float32, [None, cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH, 2])
         self.pos_equal_one_sum = tf.placeholder(tf.float32, [None, 1, 1, 1])
@@ -78,7 +78,7 @@ class MiddleAndRPN:
             # => batch, 50, 44, 512
 
             temp_conv = ConvMD(2, 256, 64, 3, (1, 1), (1, 1), route_1, training=self.training, name='conv16')
-            warn("shape: {}".format(np.shape(temp_conv)))
+            # warn("shape: {}".format(np.shape(temp_conv)))
             # => batch, 100, 88, 64
             temp_conv = Reorg(2, temp_conv, name = 'reorg1')
             # => batch, 50, 44, 256
@@ -87,38 +87,19 @@ class MiddleAndRPN:
             temp_conv = ConvMD(2, 768, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv17')
             # => batch, 50, 44, 128
             p_map = ConvMD(2, 128, 2, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv18')
-            r_map = ConvMD(2, 128, 14, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv19')
+            r_map = ConvMD(2, 128, 14, 1, (1, 1), (0, 0), temp_conv, training=self.training, activation = False, name='conv19')
 
-
-
-
-            # #block2:
-            # temp_conv = ConvMD(2, 128, 128, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv8')
-            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv9')
-            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv10')
-            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv11')
-            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv12')
-            # temp_conv = ConvMD(2, 128, 128, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv13')
-            # deconv2 = Deconv2D(128, 256, 2, (2, 2), (0, 0), temp_conv, training=self.training, name='deconv2')
-
-            # #block3:
-            # temp_conv = ConvMD(2, 128, 256, 3, (2, 2), (1, 1), temp_conv, training=self.training, name='conv14')
-            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv15')
-            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv16')
-            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv17')
-            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv18')
-            # temp_conv = ConvMD(2, 256, 256, 3, (1, 1), (1, 1), temp_conv, training=self.training, name='conv19')
-            # deconv3 = Deconv2D(256, 256, 4, (4, 4), (0, 0), temp_conv, training=self.training, name='deconv3')
-
-            # #final:
-            # temp_conv = tf.concat([deconv3, deconv2, deconv1], -1)
-            # #Probability score map, scale = [None, 200/100, 176/120, 2]
-            # p_map = ConvMD(2, 768, 2, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv20')
-            # #Regression(residual) map, scale = [None, 200/100, 176/120, 14]
-            # r_map = ConvMD(2, 768, 14, 1, (1, 1), (0, 0), temp_conv, training=self.training, name='conv21')
-            #softmax output for positive anchor and negative anchor, scale = [None, 200/100, 176/120, 1]
             self.p_pos = tf.sigmoid(p_map)
             self.output_shape = [cfg.FEATURE_HEIGHT, cfg.FEATURE_WIDTH]
+
+            x_pos_0 = tf.expand_dims(tf.sigmoid(r_map[..., 0]), -1)
+            y_pos_0 = tf.expand_dims(tf.sigmoid(r_map[..., 1]), -1)
+            x_pos_1 = tf.expand_dims(tf.sigmoid(r_map[..., 7]), -1)
+            y_pos_1 = tf.expand_dims(tf.sigmoid(r_map[..., 8]), -1)
+
+            r_map = tf.concat([x_pos_0, y_pos_0, r_map[:,:,:,2:7], x_pos_1, y_pos_1, r_map[:,:,:,9:14]], axis=-1)         
+
+            warn("rmap shape:{}".format(np.shape(r_map)))
         
             # TODO: sometime still get inf cls loss
             # wip: change to yolo style
@@ -138,7 +119,7 @@ class MiddleAndRPN:
             self.reg_loss = smooth_l1(r_map * self.pos_equal_one_for_reg, self.targets * self.pos_equal_one_for_reg, sigma) / self.pos_equal_one_sum
             self.reg_loss = tf.reduce_sum(self.reg_loss)
 
-            self.loss = tf.reduce_sum(self.cls_loss + self.reg_loss)
+            self.loss = tf.reduce_sum(5.0 * self.cls_loss + self.reg_loss)
 
             self.delta_output = r_map 
             self.prob_output = self.p_pos
@@ -158,20 +139,20 @@ def smooth_l1(deltas, targets, sigma=3.0):
 
 def Reorg(stride, x, name='reorg'):
     with tf.variable_scope(name) as scope:
-        warn("shape: {}".format(np.shape(x)))
+        # warn("shape: {}".format(np.shape(x)))
         batch, height, width, channel = np.shape(x)
         # => batch * 100 * 88 * 64
-        warn("{} {} {} {}".format(batch, height, width, channel))
-        x = tf.reshape(x, [-1, height/stride, stride, width/stride, stride, channel])
-        warn("shape: {}".format(np.shape(x)))
+        # warn("{} {} {} {}".format(batch, height, width, channel))
+        x = tf.reshape(x, [-1, height//stride, stride, width//stride, stride, channel])
+        # warn("shape: {}".format(np.shape(x)))
 
         # => batch * 50 * 2 * 44 * 2 * 64
         x = tf.transpose(x, perm = [0, 1, 3, 2, 4, 5])
-        warn("shape: {}".format(np.shape(x)))
+        # warn("shape: {}".format(np.shape(x)))
 
         # => batch * 50 * 44 * 2 * 2 * 64 
-        x = tf.reshape(x, [-1, height/stride, width/stride, 4*64])
-        warn("shape: {}".format(np.shape(x)))
+        x = tf.reshape(x, [-1, height//stride, width//stride, 4*64])
+        # warn("shape: {}".format(np.shape(x)))
 
         # => batch * 50 * 44 * 256
         return x
@@ -194,7 +175,7 @@ def Reorg(stride, x, name='reorg'):
 
 
 
-def ConvMD(M, Cin, Cout, k, s, p, input, training=True, name='conv'):
+def ConvMD(M, Cin, Cout, k, s, p, input, training=True, activation=True, name='conv'):
     temp_p = np.array(p)
     temp_p = np.lib.pad(temp_p, (1, 1), 'constant', constant_values = (0, 0))
     with tf.variable_scope(name) as scope:
@@ -207,7 +188,11 @@ def ConvMD(M, Cin, Cout, k, s, p, input, training=True, name='conv'):
             pad = tf.pad(input, paddings, "CONSTANT")
             temp_conv = tf.layers.conv3d(pad, Cout, k, strides = s, padding = "valid", reuse=tf.AUTO_REUSE, name=scope)
         temp_conv = tf.layers.batch_normalization(temp_conv, axis = -1, fused=True, training=training, reuse=tf.AUTO_REUSE, name=scope)
-        return tf.nn.relu(temp_conv)
+
+        if activation:
+            return tf.nn.relu(temp_conv)
+        else:
+            return temp_conv
 
 def Deconv2D(Cin, Cout, k, s, p, input, training=True, name='deconv'):
     temp_p = np.array(p)

@@ -12,9 +12,11 @@ import os
 import tensorflow as tf
 
 from config import cfg
-from utils import * 
-from group_pointcloud import FeatureNet
-from rpn import MiddleAndRPN
+from utils.utils import * 
+from model.group_pointcloud import FeatureNet, FeatureNet_new
+from model.rpn import MiddleAndRPN
+from misc_util import warn
+from utils.colorize import *
 
 
 class RPN3D(object):
@@ -46,10 +48,15 @@ class RPN3D(object):
         self.vox_feature = [] 
         self.vox_number = []
         self.vox_coordinate = [] 
+
+        self.doubled_vox_feature = [] 
+        self.doubled_vox_number = []
+        self.doubled_vox_coordinate = [] 
+
         self.targets = [] 
         # => wip: add confidence(iou) here for yolo style
         # => pos_equal_one is actually conf_mask in yolo code
-        self.conf_target = []
+        # self.conf_target = []
         self.pos_equal_one = [] 
         self.pos_equal_one_sum = [] 
         self.pos_equal_one_for_reg = [] 
@@ -66,15 +73,25 @@ class RPN3D(object):
                 with tf.device('/gpu:{}'.format(dev)), tf.name_scope('gpu_{}'.format(dev)):
                     # must use name scope here since we do not want to create new variables
                     # graph
-                    feature = FeatureNet(training=is_train, batch_size=self.single_batch_size)
-                    rpn = MiddleAndRPN(input=feature.outputs, alpha=self.alpha, beta=self.beta, training=is_train)
+                    feature = FeatureNet(training=is_train, batch_size=self.single_batch_size, doubled = False, name = 'single_feat')
+                    doubled_feature = FeatureNet(training=is_train, batch_size=self.single_batch_size, doubled = True, name = 'doubled_feat')
+                    # warn("check size: {}".format(np.shape(doubled_feature.outputs)))
+                    # concat_feature = tf.concat([feature.outputs, doubled_feature.outputs], axis = -1)
+                    # warn("check size: {}".format(np.shape(concat_feature)))
+                    concat_feat = tf.concat([feature.outputs, doubled_feature.outputs], axis = -1)
+                    rpn = MiddleAndRPN(input=concat_feat, alpha=self.alpha, beta=self.beta, training=is_train)
                     tf.get_variable_scope().reuse_variables()
                     # input
                     self.vox_feature.append(feature.feature)
                     self.vox_number.append(feature.number)
                     self.vox_coordinate.append(feature.coordinate)
+
+                    self.doubled_vox_feature.append(doubled_feature.feature)
+                    self.doubled_vox_number.append(doubled_feature.number)
+                    self.doubled_vox_coordinate.append(doubled_feature.coordinate)
+
                     self.targets.append(rpn.targets)
-                    self.conf_target.append(rpn.conf_target)
+                    # self.conf_target.append(rpn.conf_target)
                     self.pos_equal_one.append(rpn.pos_equal_one)
                     self.pos_equal_one_sum.append(rpn.pos_equal_one_sum)
                     self.pos_equal_one_for_reg.append(rpn.pos_equal_one_for_reg)
@@ -112,9 +129,15 @@ class RPN3D(object):
         self.anchors = cal_anchors()
         # for predict and image summary 
         self.rgb = tf.placeholder(tf.uint8, [None, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH, 3])
-        self.bv = tf.placeholder(tf.uint8, [None, cfg.BV_LOG_FACTOR*cfg.INPUT_HEIGHT, cfg.BV_LOG_FACTOR*cfg.INPUT_WIDTH, 3])
+
+
+        self.bv = tf.placeholder(tf.uint8, [
+                                 None, cfg.BV_LOG_FACTOR * cfg.INPUT_HEIGHT, cfg.BV_LOG_FACTOR * cfg.INPUT_WIDTH, 3])
+        self.bv_heatmap = tf.placeholder(tf.uint8, [
+            None, cfg.BV_LOG_FACTOR * cfg.FEATURE_HEIGHT, cfg.BV_LOG_FACTOR * cfg.FEATURE_WIDTH, 3])
         self.boxes2d = tf.placeholder(tf.float32, [None, 4])
         self.boxes2d_scores = tf.placeholder(tf.float32, [None])
+
 
         # NMS(2D)
         with tf.device('/gpu:{}'.format(self.avail_gpus[0])):
@@ -140,8 +163,9 @@ class RPN3D(object):
         # TODO: bird_view_summary and front_view_summary
         
         self.predict_summary = tf.summary.merge([
-            tf.summary.image('predict/bird_view_lidar', self.bv),   
-            tf.summary.image('predict/front_view_rgb', self.rgb), 
+            tf.summary.image('predict/bird_view_lidar', self.bv),
+            tf.summary.image('predict/bird_view_heatmap', self.bv_heatmap),
+            tf.summary.image('predict/front_view_rgb', self.rgb),
         ])
 
 
@@ -157,21 +181,36 @@ class RPN3D(object):
         vox_feature = data[2]
         vox_number = data[3]
         vox_coordinate = data[4]
+        doubled_vox_feature = data[5]
+        doubled_vox_number = data[6]
+        doubled_vox_coordinate = data[7]
         print('train', tag)
-        pos_equal_one, neg_equal_one, targets, conf_target = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
+        pos_equal_one, neg_equal_one, targets = cal_rpn_target(
+            label, self.rpn_output_shape, self.anchors, cls=cfg.DETECT_OBJ, coordinate='lidar')
         pos_equal_one_for_reg = np.concatenate([np.tile(pos_equal_one[..., [0]], 7), np.tile(pos_equal_one[..., [1]], 7)], axis=-1)
         pos_equal_one_sum = np.clip(np.sum(pos_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None) 
         neg_equal_one_sum = np.clip(np.sum(neg_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None)
+        # warn("shape: {} {}".format(np.shape(vox_feature), np.shape(doubled_vox_feature))) 
         
         input_feed = {}
         for idx in range(len(self.avail_gpus)):
             input_feed[self.vox_feature[idx]] = vox_feature[idx]
             input_feed[self.vox_number[idx]] = vox_number[idx]
             input_feed[self.vox_coordinate[idx]] = vox_coordinate[idx]
+
+            input_feed[self.doubled_vox_feature[idx]] = doubled_vox_feature[idx]
+            # warn("test: {}".format(vox_feature[idx][0][0:4]))
+            input_feed[self.doubled_vox_number[idx]] = doubled_vox_number[idx]
+            input_feed[self.doubled_vox_coordinate[idx]] = doubled_vox_coordinate[idx]
+            # warn("===========================")
+            # warn("train: {} {} {}".format(np.shape(vox_feature[idx]), np.shape(vox_number[idx]), np.shape(vox_coordinate[idx])))
+
+            # warn("train: {} {} {}".format(np.shape(doubled_vox_feature[idx]), np.shape(doubled_vox_number[idx]), np.shape(doubled_vox_coordinate[idx])))
+
             input_feed[self.targets[idx]] = targets[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             # => wip: add confidence(iou) here for yolo style
             # => pos_equal_one is actually conf_mask in yolo code
-            input_feed[self.conf_target[idx]] = conf_target[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
+            # input_feed[self.conf_target[idx]] = conf_target[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one[idx]] = pos_equal_one[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_sum[idx]] = pos_equal_one_sum[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_for_reg[idx]] = pos_equal_one_for_reg[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
@@ -199,8 +238,9 @@ class RPN3D(object):
         vox_feature = data[2]
         vox_number = data[3]
         vox_coordinate = data[4]
+
         print('valid', tag)
-        pos_equal_one, neg_equal_one, targets, conf_target = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
+        pos_equal_one, neg_equal_one, targets = cal_rpn_target(label, self.rpn_output_shape, self.anchors)
         pos_equal_one_for_reg = np.concatenate([np.tile(pos_equal_one[..., [0]], 7), np.tile(pos_equal_one[..., [1]], 7)], axis=-1)
         pos_equal_one_sum = np.clip(np.sum(pos_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None) 
         neg_equal_one_sum = np.clip(np.sum(neg_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None)
@@ -211,7 +251,6 @@ class RPN3D(object):
             input_feed[self.vox_number[idx]] = vox_number[idx]
             input_feed[self.vox_coordinate[idx]] = vox_coordinate[idx]
             input_feed[self.targets[idx]] = targets[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
-            input_feed[self.conf_target[idx]] = conf_target[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
 
             input_feed[self.pos_equal_one[idx]] = pos_equal_one[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
             input_feed[self.pos_equal_one_sum[idx]] = pos_equal_one_sum[idx*self.single_batch_size:(idx+1)*self.single_batch_size]
@@ -225,7 +264,7 @@ class RPN3D(object):
         return session.run(output_feed, input_feed)
    
     
-    def predict_step(self, session, data, summary=False):
+    def predict_step(self, session, data, iter_n, summary=False):
         # input:  
         #     (N) tag 
         #     (N, N') label(can be empty)
@@ -243,8 +282,11 @@ class RPN3D(object):
         vox_feature = data[2]
         vox_number = data[3]
         vox_coordinate = data[4]
-        img = data[5]
-        lidar = data[6]
+        doubled_vox_feature = data[5]
+        doubled_vox_number = data[6]
+        doubled_vox_coordinate = data[7]
+        img = data[8]
+        lidar = data[9]
 
         batch_gt_boxes3d = label_to_gt_box3d(label, cls=self.cls, coordinate='lidar')
         print('predict', tag)
@@ -253,6 +295,9 @@ class RPN3D(object):
             input_feed[self.vox_feature[idx]] = vox_feature[idx]
             input_feed[self.vox_number[idx]] = vox_number[idx]
             input_feed[self.vox_coordinate[idx]] = vox_coordinate[idx]
+            input_feed[self.doubled_vox_feature[idx]] = doubled_vox_feature[idx]
+            input_feed[self.doubled_vox_number[idx]] = doubled_vox_number[idx]
+            input_feed[self.doubled_vox_coordinate[idx]] = doubled_vox_coordinate[idx]
 
         output_feed = [self.prob_output, self.delta_output]
         probs, deltas = session.run(output_feed, input_feed)
@@ -260,43 +305,60 @@ class RPN3D(object):
         batch_boxes3d = delta_to_boxes3d(deltas, self.anchors, coordinate='lidar')
         batch_boxes2d = batch_boxes3d[:, :, [0,1,4,5,6]]
         batch_probs = probs.reshape((len(self.avail_gpus) * self.single_batch_size, -1))
-        # NMS 
+        # NMS
         ret_box3d = []
         ret_score = []
-        for batch_id in range(len(self.avail_gpus)*self.single_batch_size):
-            # BOTTLENECK
+        for batch_id in range(len(self.avail_gpus) * self.single_batch_size):
+            # remove box with low score
+            ind = np.where(batch_probs[batch_id, :] >= cfg.RPN_SCORE_THRESH)[0]
+            tmp_boxes3d = batch_boxes3d[batch_id, ind, ...]
+            tmp_boxes2d = batch_boxes2d[batch_id, ind, ...]
+            tmp_scores = batch_probs[batch_id, ind]
+
             # TODO: if possible, use rotate NMS
-            boxes2d = corner_to_standup_box2d(center_to_corner_box2d(batch_boxes2d[batch_id]))
+            boxes2d = corner_to_standup_box2d(
+                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', check = True))
             ind = session.run(self.box2d_ind_after_nms, {
                 self.boxes2d: boxes2d,
-                self.boxes2d_scores: batch_probs[batch_id]
-            })    
-            tmp_boxes3d = batch_boxes3d[batch_id, ind, ...]
-            tmp_scores = batch_probs[batch_id, ind]
-            ind = np.where(tmp_scores >= cfg.RPN_SCORE_THRESH)[0]
-            ret_box3d.append(tmp_boxes3d[ind, ...])
-            ret_score.append(tmp_scores[ind])
+                self.boxes2d_scores: tmp_scores
+            })
+            tmp_boxes3d = tmp_boxes3d[ind, ...]
+            tmp_scores = tmp_scores[ind]
+            ret_box3d.append(tmp_boxes3d)
+            ret_score.append(tmp_scores)
 
         ret_box3d_score = []
         for boxes3d, scores in zip(ret_box3d, ret_score):
-            ret_box3d_score.append(np.concatenate([np.tile(self.cls, len(boxes3d))[:, np.newaxis], 
-                boxes3d, scores[:, np.newaxis]], axis=-1))
+            ret_box3d_score.append(np.concatenate([np.tile(self.cls, len(boxes3d))[:, np.newaxis],
+                                                   boxes3d, scores[:, np.newaxis]], axis=-1))
 
         if summary:
-            # only summry 1 in a batch 
-            front_image = draw_lidar_box3d_on_image(img[0], ret_box3d[0], ret_score[0], 
-                    batch_gt_boxes3d[0])
-            bird_view = lidar_to_bird_view_img(lidar[0], factor=cfg.BV_LOG_FACTOR)
-            bird_view = draw_lidar_box3d_on_birdview(bird_view, ret_box3d[0], ret_score[0], 
-                    batch_gt_boxes3d[0], factor=cfg.BV_LOG_FACTOR)
+            # only summry 1 in a batch
+            front_image = draw_lidar_box3d_on_image(img[0], ret_box3d[0], ret_score[0],
+                                                    batch_gt_boxes3d[0])
+            bird_view = lidar_to_bird_view_img(
+                lidar[0], factor=cfg.BV_LOG_FACTOR)
+            bird_view = draw_lidar_box3d_on_birdview(bird_view, ret_box3d[0], ret_score[0],
+                                                     batch_gt_boxes3d[0], factor=cfg.BV_LOG_FACTOR)
+
+            heatmap = colorize(probs[0, ...], cfg.BV_LOG_FACTOR)
+
+            save_name = "./save_image/{}_{}_fv.png".format(iter_n, tag)
+            cv2.imwrite(save_name, front_image)
+            save_name = "./save_image/{}_{}_bv.png".format(iter_n, tag)
+            cv2.imwrite(save_name, bird_view)
+            save_name = "./save_image/{}_{}_hm.png".format(iter_n, tag)
+            cv2.imwrite(save_name, heatmap)
+
             ret_summary = session.run(self.predict_summary, {
                 self.rgb: front_image[np.newaxis, ...],
-                self.bv: bird_view[np.newaxis, ...]
-            }) 
-            
-            return tag, ret_box3d_score, ret_summary 
-        
-        return tag, ret_box3d_score 
+                self.bv: bird_view[np.newaxis, ...],
+                self.bv_heatmap: heatmap[np.newaxis, ...]
+            })
+
+            return tag, ret_box3d_score, ret_summary
+
+        return tag, ret_box3d_score
 
 
 def average_gradients(tower_grads):

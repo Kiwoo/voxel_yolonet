@@ -11,7 +11,7 @@ from itertools import count
 
 from config import cfg
 from model import RPN3D
-from kitti_loader import KittiLoader
+from utils.kitti_loader import KittiLoader
 from misc_util import *
 # from train_hook import check_if_should_pause
 
@@ -28,7 +28,11 @@ parser.add_argument('-l', '--lr', type=float, nargs='?', default=0.001,
                     help='set learning rate')
 args = parser.parse_args()
 
-dataset_dir = './data/object'
+cur_dir = get_cur_dir()
+
+dataset_dir = os.path.join(cur_dir, 'data/object')
+warn("dataset_dir: {}".format(dataset_dir))
+# dataset_dir = '../data/object'
 log_dir = os.path.join('./log', args.tag)
 save_model_dir = os.path.join('./save_model', args.tag)
 mkdir_p(log_dir)
@@ -42,25 +46,25 @@ def main(_):
     warn("main start")
     with tf.Graph().as_default():
         global save_model_dir
-        with KittiLoader(object_dir=os.path.join(dataset_dir, 'training'), queue_size=50, require_shuffle=True, 
-                is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
+        with KittiLoader(object_dir=os.path.join(dataset_dir, 'training'), queue_size=5, require_shuffle=True, 
+                is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=2, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
         # , \KittiLoader(object_dir=os.path.join(dataset_dir, 'testing'), queue_size=50, require_shuffle=True, 
         #         is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, multi_gpu_sum=cfg.GPU_USE_COUNT) as valid_loader:
             
-            # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=cfg.GPU_MEMORY_FRACTION, 
-            #     visible_device_list=cfg.GPU_AVAILABLE,
-            #     allow_growth=True)
-            # tf_config = tf.ConfigProto(
-            #     gpu_options=gpu_options,
-            #     device_count={
-            #         "GPU" : cfg.GPU_USE_COUNT,  
-            #     },
-            #     allow_soft_placement=True
-            # )
-            tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
-            tf_config.gpu_options.allow_growth = True
+            gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=cfg.GPU_MEMORY_FRACTION,
+                                        visible_device_list=cfg.GPU_AVAILABLE,
+                                        allow_growth=True)
+            config = tf.ConfigProto(
+                gpu_options=gpu_options,
+                device_count={
+                    "GPU": cfg.GPU_USE_COUNT,
+                },
+                allow_soft_placement=True,
+            )
+            # tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
+            # tf_config.gpu_options.allow_growth = True
             warn("1")
-            with tf.Session(config=tf_config) as sess:
+            with tf.Session(config=config) as sess:
                 model = RPN3D(
                     cls=cfg.DETECT_OBJ,
                     single_batch_size=args.single_batch_size,
@@ -85,7 +89,7 @@ def main(_):
                 is_summary, is_summary_image, is_validate = False, False, False 
                 
                 summary_interval = 50
-                summary_image_interval = 10
+                summary_image_interval = 50
                 save_model_interval = 50
                 validate_interval = 60
                 
@@ -110,15 +114,15 @@ def main(_):
                     ret = model.train_step(sess, train_loader.load(), train=True, summary=is_summary)
                     t1 = time.time()
                     warn("train: {}".format(t1-t0))
-                    print('train: {}/{} @ epoch:{}/{} loss: {} reg_loss: {} cls_loss: {} {}'.format(iter, 
-                        iter_per_epoch*args.max_epoch, model.epoch.eval(), args.max_epoch, ret[0], ret[1], ret[2], args.tag))
+                    print('train: {}/{} @ epoch:{}/{} {:.2f} sec, loss: {} reg_loss: {} cls_loss: {} {}'.format(iter, 
+                        iter_per_epoch*args.max_epoch, model.epoch.eval(), args.max_epoch, t1-t0, ret[0], ret[1], ret[2], args.tag))
 
                     if is_summary:
                         summary_writer.add_summary(ret[-1], iter)
 
                     if is_summary_image:
                         t0 = time.time()
-                        ret = model.predict_step(sess, train_loader.load(), summary=True)
+                        ret = model.predict_step(sess, train_loader.load(), iter, summary=True)
                         summary_writer.add_summary(ret[-1], iter)
                         t1= time.time()
                         warn("predict: {}".format(t1-t0))

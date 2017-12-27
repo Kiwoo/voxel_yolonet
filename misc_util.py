@@ -16,10 +16,10 @@ def getint(name):
     return int(file_num[0])
 
 def read_dataset(dir_name):
-    print "Start: Read Dataset"
+    print("Start: Read Dataset")
     img_dir = dir_name
     img_files = [f for f in os.listdir(img_dir) if os.path.isfile(os.path.join(img_dir, f))] 
-    print "Done: Read Dataset, read {} files".format(len(img_files))
+    print("Done: Read Dataset, read {} files".format(len(img_files)))
     return img_files
 
 def load_image(dir_name, img_names):
@@ -36,7 +36,7 @@ def load_image(dir_name, img_names):
             images.append(im_arr)
             # print "Good Img"
         else:
-            print "Error-1"
+            print("Error-1")
 
     return images[0:len(images)/2], images[len(images)/2:]
 
@@ -50,7 +50,7 @@ def load_single_img(dir_name, img_name):
         im_arr = np.expand_dims(im_arr, axis = 2)
         images.append(im_arr)
     else:
-        print header("Error-1")
+        print(header("Error-1"))
 
     return images
 
@@ -91,10 +91,10 @@ class Colors(object):
     FAIL = '\033[91m'
     ENDC = '\033[0m'
 
-def header(s): print Colors.HEADER + s + Colors.ENDC
-def warn(s): print Colors.WARNING + s + Colors.ENDC
-def failure(s): print Colors.FAIL + s + Colors.ENDC
-def filesave(s) : print Colors.OKGREEN + s + Colors.ENDC
+def header(s): print(Colors.HEADER + s + Colors.ENDC)
+def warn(s): print(Colors.WARNING + s + Colors.ENDC)
+def failure(s): print(Colors.FAIL + s + Colors.ENDC)
+def filesave(s) : print(Colors.OKGREEN + s + Colors.ENDC)
 
 def mkdir_p(path):
     try:

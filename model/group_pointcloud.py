@@ -7,6 +7,7 @@ import tensorflow as tf
 import time
 
 from config import cfg
+from misc_util import warn
 
 
 class VFELayer(object):
@@ -42,7 +43,7 @@ class VFELayer(object):
 
 class FeatureNet(object):
 
-    def __init__(self, training, batch_size, name=''):
+    def __init__(self, training, batch_size, doubled = False, name=''):
         super(FeatureNet, self).__init__()
         self.training = training
 
@@ -57,13 +58,15 @@ class FeatureNet(object):
         self.coordinate = tf.placeholder(
             tf.int64, [None, 4], name='coordinate')
 
+
         with tf.variable_scope(name, reuse=tf.AUTO_REUSE) as scope:
             self.vfe1 = VFELayer(32, 'VFE-1')
-            self.vfe2 = VFELayer(128, 'VFE-2')
+            self.vfe2 = VFELayer(128, 'VFE-2')            
             self.dense = tf.layers.Dense(
                 128, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
             self.batch_norm = tf.layers.BatchNormalization(
                 name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
+
         # boolean mask [K, T, 2 * units]
         mask = tf.not_equal(tf.reduce_max(
             self.feature, axis=2, keep_dims=True), 0)
@@ -71,14 +74,76 @@ class FeatureNet(object):
         x = self.vfe2.apply(x, mask, self.training)
         x = self.dense.apply(x)
         x = self.batch_norm.apply(x, self.training)
-
         # [ΣK, 128]
         voxelwise = tf.reduce_max(x, axis=1)
 
+
         # car: [N * 10 * 400 * 352 * 128]
         # pedestrian/cyclist: [N * 10 * 200 * 240 * 128]
+
+        # if doubled == True:
+        #     voxelwise = tf.reshape(tf.tile(voxelwise, [1, 8]), [-1, 128])
+        if doubled == True:
+            outputs = tf.scatter_nd(
+                self.coordinate, voxelwise, [self.batch_size, 10//2, cfg.INPUT_HEIGHT//2, cfg.INPUT_WIDTH//2, 128])
+            outputs = tf.transpose(outputs, [0, 4, 1, 2, 3])
+            outputs = tf.reshape(outputs, [-1, 1]) * tf.ones([1,8])
+            outputs = tf.reshape(outputs, [self.batch_size * 128, 10//2, cfg.INPUT_HEIGHT//2, cfg.INPUT_WIDTH//2, 2, 2, 2])
+            outputs = tf.transpose(outputs, [0,1,6,2,5,3,4])
+            outputs = tf.reshape(outputs, [self.batch_size, 128, 10, cfg.INPUT_HEIGHT, cfg.INPUT_WIDTH])
+            self.outputs = tf.transpose(outputs, [0,2,3,4,1])
+            
+        else:            
+            self.outputs = tf.scatter_nd(
+                self.coordinate, voxelwise, [self.batch_size, 10, cfg.INPUT_HEIGHT, cfg.INPUT_WIDTH, 128])
+
+
+class FeatureNet_new(object):
+
+    def __init__(self, training, batch_size, doubled = False, name=''):
+        super(FeatureNet_new, self).__init__()
+        self.training = training
+
+        # scalar
+        self.batch_size = batch_size
+        # [ΣK, 35/45, 7]
+        self.feature = tf.placeholder(
+            tf.float32, [None, cfg.VOXEL_POINT_COUNT, 7], name='feature')
+        # [ΣK]
+        self.number = tf.placeholder(tf.int64, [None], name='number')
+        # [ΣK, 4], each row stores (batch, d, h, w)
+        self.coordinate = tf.placeholder(
+            tf.int64, [None, 4], name='coordinate')
+
+
+        with tf.variable_scope(name, reuse=tf.AUTO_REUSE) as scope:
+            self.vfe1 = VFELayer(32, 'VFE-1')
+            self.vfe2 = VFELayer(64, 'VFE-2')            
+            self.dense = tf.layers.Dense(
+                64, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
+            self.batch_norm = tf.layers.BatchNormalization(
+                name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
+
+        # boolean mask [K, T, 2 * units]
+        mask = tf.not_equal(tf.reduce_max(
+            self.feature, axis=2, keep_dims=True), 0)
+        x = self.vfe1.apply(self.feature, mask, self.training)
+        x = self.vfe2.apply(x, mask, self.training)
+        x = self.dense.apply(x)
+        x = self.batch_norm.apply(x, self.training)
+        # [ΣK, 128]
+        voxelwise = tf.reduce_max(x, axis=1)
+
+
+        # car: [N * 10 * 400 * 352 * 128]
+        # pedestrian/cyclist: [N * 10 * 200 * 240 * 128]
+
+        if doubled == True:
+            voxelwise = tf.tile(voxelwise, [8, 1])
+
         self.outputs = tf.scatter_nd(
-            self.coordinate, voxelwise, [self.batch_size, 10, cfg.INPUT_HEIGHT, cfg.INPUT_WIDTH, 128])
+            self.coordinate, voxelwise, [self.batch_size, 10, cfg.INPUT_HEIGHT, cfg.INPUT_WIDTH, 64])
+
 
 
 def build_input(voxel_dict_list):
