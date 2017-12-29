@@ -145,8 +145,8 @@ class KittiLoader(object):
                 # raw_lidar.append(lidar)
                 # labels.append(label)
                 # tag.append(self.data_tag[load_index])
-                # voxel.append(voxelize(lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
-                # doubled_voxel.append(voxelize(lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
+                # voxel.append(voxelize(self.f_lidar[load_index], lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
+                # doubled_voxel.append(voxelize(self.f_lidar[load_index], lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
                
 
 

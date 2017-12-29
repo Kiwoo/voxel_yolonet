@@ -14,7 +14,8 @@ import multiprocessing as mp
 import argparse
 import glob
 
-from utils import *
+from utils.utils import *
+from utils.preprocess import clip_by_projection
 
 object_dir = './data/object'
 output_path = os.path.join(object_dir, 'training')
@@ -25,66 +26,36 @@ parser.add_argument('-n', '--num-workers', type=int, nargs='?', default=10)
 args = parser.parse_args()
 
 def data_augmentation(f_lidar, f_label):
+
+    shift_x = [-0.8, 0.8]
+    shift_y = [-0.8, 0.8]
+    shift_z = [-0.2, 0.2]
+    angle = [-np.pi/4, np.pi/4]
+    scale = [0.95, 1.05] 
+
     lidar = np.fromfile(f_lidar, dtype=np.float32).reshape((-1, 4))
+
     label = np.array([line for line in open(f_label, 'r').readlines()])
     cls = np.array([line.split()[0] for line in label])  # (N')
     gt_box3d = label_to_gt_box3d(np.array(label)[np.newaxis, :], cls='', coordinate='camera')[
         0]  # (N', 7) x, y, z, h, w, l, r
 
-    choice = np.random.randint(1, 10)
-    if choice >= 10:
-        lidar_center_gt_box3d = camera_to_lidar_box(gt_box3d)
-        lidar_corner_gt_box3d = center_to_corner_box3d(
-            lidar_center_gt_box3d, coordinate='lidar')
-        for idx in range(len(lidar_corner_gt_box3d)):
-            # TODO: precisely gather the point
-            t_rz = np.random.uniform(-np.pi / 10, np.pi / 10)
-            t_x = np.random.normal()
-            t_y = np.random.normal()
-            t_z = np.random.normal()
-            # check collision
-            tmp = box_transform(
-                lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar')
-            is_collision = False
-            for idy in range(idx):
-                x1, y1, w1, l1, r1 = tmp[0][[0, 1, 4, 5, 6]]
-                x2, y2, w2, l2, r2 = lidar_center_gt_box3d[idy][[
-                    0, 1, 4, 5, 6]]
-                iou = cal_iou2d(np.array([x1, y1, w1, l1, r1], dtype=np.float32),
-                                np.array([x2, y2, w2, l2, r2], dtype=np.float32))
-                if iou > 0:
-                    is_collision = True
-                    break
-            if not is_collision:
-                box_corner = lidar_corner_gt_box3d[idx]
-                minx = np.min(box_corner[:, 0])
-                miny = np.min(box_corner[:, 1])
-                minz = np.min(box_corner[:, 2])
-                maxx = np.max(box_corner[:, 0])
-                maxy = np.max(box_corner[:, 1])
-                maxz = np.max(box_corner[:, 2])
-                bound_x = np.logical_and(
-                    lidar[:, 0] >= minx, lidar[:, 0] <= maxx)
-                bound_y = np.logical_and(
-                    lidar[:, 1] >= miny, lidar[:, 1] <= maxy)
-                bound_z = np.logical_and(
-                    lidar[:, 2] >= minz, lidar[:, 2] <= maxz)
-                bound_box = np.logical_and(
-                    np.logical_and(bound_x, bound_y), bound_z)
-                lidar[bound_box, 0:3] = point_transform(
-                    lidar[bound_box, 0:3], t_x, t_y, t_z, rz=t_rz)
-                lidar_center_gt_box3d[idx] = box_transform(
-                    lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar')
+    choice = np.random.randint(3)
+    if choice == 0:
+        # global shift
+        t_x = np.random.uniform(shift_x[0], shift_x[1])
+        t_y = np.random.uniform(shift_y[0], shift_y[1])
+        t_z = np.random.uniform(shift_z[0], shift_z[1])
 
-        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
-        newtag = 'aug_{}_1_{}'.format(
-            tag, np.random.randint(1, args.aug_amount))
-    elif True:
+        lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=t_x, ty=t_y, tz=t_z, rx=0, ry=0, rz=0)
+        gt_box3d = box_transform(gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=0, coordinate='camera')
+
+    elif choice == 1:
     # elif choice <= 7 and choice >= 2:
         # global rotation
         angle = np.random.uniform(-np.pi / 4, np.pi / 4)
-        lidar[:, 0:3] = point_transform(lidar[:, 0:3], 0, 0, 0, rz=angle)
-        gt_box3d = box_transform(gt_box3d, 0, 0, 0, -angle, 'camera')
+        lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=0, ty=0, tz=0, rx=0, ry=0, rz=angle)
+        gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=-angle, coordinate='camera')
         newtag = 'aug_{}_2_{:.4f}'.format(tag, angle).replace('.', '_')
     else:
         # global scaling
@@ -92,6 +63,9 @@ def data_augmentation(f_lidar, f_label):
         lidar = lidar * factor
         gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
         newtag = 'aug_{}_3_{:.4f}'.format(tag, factor).replace('.', '_')
+
+    calib_file = f_lidar.replace('velodyne', 'calib').replace('bin', 'txt')
+    lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
 
     label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], coordinate='camera')[0]  # (N')
     return lidar, label
