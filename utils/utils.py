@@ -586,8 +586,8 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
                 warn("***  illegal data removed: {:.2f} {:.2f} ***".format(gx, gy))
                 continue
 
-            gx_ratio = (gx - cfg.X_MIN) / (cfg.X_MAX - cfg.X_MIN) * cfg.FEATURE_WIDTH
-            gy_ratio = (gy - cfg.Y_MIN) / (cfg.Y_MAX - cfg.Y_MIN) * cfg.FEATURE_HEIGHT
+            gx_ratio = (gx - cfg.X_MIN) / (cfg.X_MAX - cfg.X_MIN) * (cfg.FEATURE_WIDTH-1)
+            gy_ratio = (gy - cfg.Y_MIN) / (cfg.Y_MAX - cfg.Y_MIN) * (cfg.FEATURE_HEIGHT-1)
             gi = int(gx_ratio)
             gj = int(gy_ratio)
 
