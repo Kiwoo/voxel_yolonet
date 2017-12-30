@@ -51,13 +51,15 @@ def voxelize(file, lidar = None, voxel_size = voxel_size, T = max_point_number):
 
     # t0 = time.time()
     if lidar is not None:
+        # warn("lidar yes")
         point_cloud = lidar
     else:
+        # warn("lidar None")
         point_cloud = np.fromfile(file, dtype=np.float32).reshape(-1, 4)
     np.random.shuffle(point_cloud)
     # warn('voxel file: {}'.format(file))
     calib_file = file.replace('velodyne', 'calib').replace('bin', 'txt')
-    # len1 = len(point_cloud)
+    # # len1 = len(point_cloud)
 
     point_cloud = clip_by_projection(point_cloud, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
 

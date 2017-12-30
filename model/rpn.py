@@ -116,6 +116,14 @@ class MiddleAndRPN:
              + beta * (-self.neg_equal_one * tf.log(1 - self.p_pos + small_addon_for_BCE)) / self.neg_equal_one_sum
             self.cls_loss = tf.reduce_sum(self.cls_loss)
 
+            # alpha_tf = 0.25
+            # gamma = 2
+            # pred_pt = tf.where(tf.equal(self.pos_equal_one, 1.0), self.p_pos, 1.0 - self.p_pos)
+            # alpha_t = tf.scalar_mul(alpha_tf, tf.ones_like(self.pos_equal_one, dtype=tf.float32))
+            # alpha_t = tf.where(tf.equal(self.pos_equal_one, 1.0), alpha_t, 1.0 - alpha_t)
+
+            # self.focal_loss = tf.reduce_sum(-alpha_t * tf.pow(1.0 - pred_pt, gamma) * tf.log(pred_pt + small_addon_for_BCE))
+
             self.reg_loss = smooth_l1(r_map * self.pos_equal_one_for_reg, self.targets * self.pos_equal_one_for_reg, sigma) / self.pos_equal_one_sum
             self.reg_loss = tf.reduce_sum(self.reg_loss)
 

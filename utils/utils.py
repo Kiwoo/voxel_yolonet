@@ -110,8 +110,8 @@ def center_to_corner_box2d(boxes_center, coordinate='lidar', check = False):
     boxes3d_corner = center_to_corner_box3d(
         boxes3d_center, coordinate=coordinate)
 
-    if check == True:
-        warn("center: {} corner: {}".format(boxes_center, boxes3d_corner))
+    # if check == True:
+    #     warn("center: {} corner: {}".format(boxes_center, boxes3d_corner))
     return boxes3d_corner[:, 0:4, 0:2]
 
 
@@ -398,7 +398,7 @@ def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, gt_boxes3d=np.array(
         x2, y2 = lidar_to_bird_view(*box[2, 0:2], factor=factor)
         x3, y3 = lidar_to_bird_view(*box[3, 0:2], factor=factor)
 
-        warn("x0: {} y0: {} x1: {} y1: {} x2: {} y2: {} x3: {} y3:{}".format(int(x0), int(y0), int(x1), int(y1), int(x2), int(y2), int(x3), int(y3)))
+        # warn("x0: {} y0: {} x1: {} y1: {} x2: {} y2: {} x3: {} y3:{}".format(int(x0), int(y0), int(x1), int(y1), int(x2), int(y2), int(x3), int(y3)))
 
         cv2.line(img, (int(x0), int(y0)), (int(x1), int(y1)),
                  color, thickness, cv2.LINE_AA)
@@ -490,8 +490,9 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], coordinate='camera'):
                 box3d = [h, w, l, x, y, z, r]
                 label.append(template.format(cls, 0, 0, 0, *box2d, *box3d))
             batch_label.append(label)
+        # warn("batch_label: {}".format(batch_label))
 
-    return np.array(batch_label)
+    return batch_label
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
@@ -708,14 +709,14 @@ def delta_to_boxes3d(deltas, anchors, coordinate='lidar'):
     deltas = deltas.reshape(deltas.shape[0], -1, 7)
     anchors_d = np.sqrt(anchors_reshaped[:, 4]**2 + anchors_reshaped[:, 5]**2)
     boxes3d = np.zeros_like(deltas)
-    warn("check deltas: {}".format(deltas[..., [0]]))
+    # warn("check deltas: {}".format(deltas[..., [0]]))
     boxes3d[..., [0]] = deltas[..., [0]] * cfg.FEATURE_WIDTH_ACTUAL + anchors_reshaped[..., [0]]
     boxes3d[..., [1]] = deltas[..., [1]] * cfg.FEATURE_HEIGHT_ACTUAL + anchors_reshaped[..., [1]]
     boxes3d[..., [2]] = deltas[..., [2]] * cfg.ANCHOR_H + anchors_reshaped[..., [2]]
     boxes3d[..., [3, 4, 5]] = np.exp(
         deltas[..., [3, 4, 5]]) * anchors_reshaped[..., [3, 4, 5]]
     boxes3d[..., 6] = deltas[..., 6] + anchors_reshaped[..., 6]
-    warn("check calu: {}".format(boxes3d[..., [0]]))
+    # warn("check calu: {}".format(boxes3d[..., [0]]))
 
     return boxes3d
 

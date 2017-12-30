@@ -35,8 +35,10 @@ warn("dataset_dir: {}".format(dataset_dir))
 # dataset_dir = '../data/object'
 log_dir = os.path.join('./log', args.tag)
 save_model_dir = os.path.join('./save_model', args.tag)
+save_image_dir = os.path.join('./save_image', args.tag)
 mkdir_p(log_dir)
 mkdir_p(save_model_dir)
+mkdir_p(save_image_dir)
 
 k = os.path.join(dataset_dir, 'training')
 warn("dir: {}".format(k))
@@ -122,7 +124,7 @@ def main(_):
 
                     if is_summary_image:
                         t0 = time.time()
-                        ret = model.predict_step(sess, train_loader.load(), iter, summary=True)
+                        ret = model.predict_step(sess, train_loader.load_specified(), iter, summary=True)
                         summary_writer.add_summary(ret[-1], iter)
                         t1= time.time()
                         warn("predict: {}".format(t1-t0))
