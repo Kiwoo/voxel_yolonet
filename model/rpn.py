@@ -113,7 +113,7 @@ class MiddleAndRPN:
             # self.cls_loss = tf.reduce_sum(self.cls_loss)
 
             self.cls_loss = alpha * (-self.pos_equal_one * tf.log(self.p_pos + small_addon_for_BCE)) / self.pos_equal_one_sum \
-             + beta * (-self.neg_equal_one * tf.log(1 - self.p_pos + small_addon_for_BCE)) / self.neg_equal_one_sum
+             + beta * (-self.neg_equal_one * tf.pow(self.p_pos, 2.0) * tf.log(1 - self.p_pos + small_addon_for_BCE)) / self.neg_equal_one_sum
             self.cls_loss = tf.reduce_sum(self.cls_loss)
 
             # alpha_tf = 0.25
