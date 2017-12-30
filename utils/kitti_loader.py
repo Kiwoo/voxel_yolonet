@@ -137,16 +137,16 @@ class KittiLoader(object):
                 # warn("shape: {} {}".format(np.shape(np.fromfile(self.f_lidar[load_index], dtype=np.float32).reshape((-1, 4))), np.shape([line for line in open(self.f_label[load_index], 'r').readlines()])))
 
                 # tag.append(self.data_tag[load_index])
-<<<<<<< HEAD
+# <<<<<<< HEAD
                 # voxel.append(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
                 # # warn("file path: {}".format(self.f_lidar[load_index]))
                 # doubled_voxel.append(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
                 # t1 = time.time()
-=======
+# =======
                 # voxel.append(voxelize(self.f_lidar[load_index], lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
                 # doubled_voxel.append(voxelize(self.f_lidar[load_index], lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
                
->>>>>>> 661685a389f514039477733cff65c5c4cc283f0c
+# >>>>>>> 661685a389f514039477733cff65c5c4cc283f0c
 
                 ##### AFTER DATA AUGMENTATION STABILIZED ####
 

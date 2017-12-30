@@ -27,18 +27,11 @@ args = parser.parse_args()
 
 def data_augmentation(f_lidar, f_label):
 
-<<<<<<< HEAD
     t0 = time.time()
     shift_x = [-0.4, 0.4]
     shift_y = [-0.4, 0.4]
     shift_z = [-0.1, 0.1]
     angle_r = [-np.pi/8, np.pi/8]
-=======
-    shift_x = [-0.8, 0.8]
-    shift_y = [-0.8, 0.8]
-    shift_z = [-0.2, 0.2]
-    angle = [-np.pi/4, np.pi/4]
->>>>>>> 661685a389f514039477733cff65c5c4cc283f0c
     scale = [0.95, 1.05] 
 
     lidar = np.fromfile(f_lidar, dtype=np.float32).reshape((-1, 4))
@@ -48,11 +41,7 @@ def data_augmentation(f_lidar, f_label):
     gt_box3d = label_to_gt_box3d(np.array(label)[np.newaxis, :], cls='', coordinate='camera')[
         0]  # (N', 7) x, y, z, h, w, l, r
 
-<<<<<<< HEAD
     choice = np.random.randint(2)
-=======
-    choice = np.random.randint(3)
->>>>>>> 661685a389f514039477733cff65c5c4cc283f0c
     if choice == 0:
         # global shift
         t_x = np.random.uniform(shift_x[0], shift_x[1])
@@ -61,36 +50,18 @@ def data_augmentation(f_lidar, f_label):
 
         lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=t_x, ty=t_y, tz=t_z, rx=0, ry=0, rz=0)
         gt_box3d = box_transform(gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=0, coordinate='camera')
-<<<<<<< HEAD
-    elif choice == 1:#7 and choice >=2:
+    elif choice == 1:
         # global rotation
         angle = np.random.uniform(angle_r[0], angle_r[1])
-        lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=0, ty=0, tz=0, rx=0, ry=0, rz=angle)
-        gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=-angle, coordinate='camera')
-    else: # Temporarily Block This
-=======
 
-    elif choice == 1:
-    # elif choice <= 7 and choice >= 2:
-        # global rotation
-        angle = np.random.uniform(-np.pi / 4, np.pi / 4)
         lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=0, ty=0, tz=0, rx=0, ry=0, rz=angle)
         gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=-angle, coordinate='camera')
-        newtag = 'aug_{}_2_{:.4f}'.format(tag, angle).replace('.', '_')
     else:
->>>>>>> 661685a389f514039477733cff65c5c4cc283f0c
         # global scaling
         factor = np.random.uniform(scale[0], scale[1])
         lidar[:, 0:3] = lidar[:, 0:3] * factor
         gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
-<<<<<<< HEAD
-=======
-        newtag = 'aug_{}_3_{:.4f}'.format(tag, factor).replace('.', '_')
 
-    calib_file = f_lidar.replace('velodyne', 'calib').replace('bin', 'txt')
-    lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
-
->>>>>>> 661685a389f514039477733cff65c5c4cc283f0c
     label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], coordinate='camera')[0]  # (N')
     calib_file = f_lidar.replace('velodyne', 'calib').replace('bin', 'txt')
     lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
