@@ -221,6 +221,10 @@ def corner_to_center_box3d(boxes_corner, coordinate='camera'):
                 np.sqrt(np.sum((roi[6, [0, 2]] - roi[7, [0, 2]])**2))
             ) / 4
             x, y, z = np.sum(roi, axis=0) / 8
+            y = y + h/2
+            # warn("x {} y {} z {}".format(x, y, z))
+
+
             ry = np.sum(
                 math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) +
                 math.atan2(roi[6, 0] - roi[5, 0], roi[6, 2] - roi[5, 2]) +
@@ -249,6 +253,7 @@ def corner_to_center_box3d(boxes_corner, coordinate='camera'):
                 np.sqrt(np.sum((roi[6, [0, 2]] - roi[7, [0, 2]])**2))
             )
             x, y, z = np.sum(roi, axis=0) / 8
+            y = y + h/2
             ry = np.sum(
                 math.atan2(roi[2, 0] - roi[1, 0], roi[2, 2] - roi[1, 2]) +
                 math.atan2(roi[6, 0] - roi[5, 0], roi[6, 2] - roi[5, 2]) +
@@ -263,6 +268,7 @@ def corner_to_center_box3d(boxes_corner, coordinate='camera'):
                 w, l = l, w
                 ry = angle_in_limit(ry + np.pi / 2)
         ret.append([x, y, z, h, w, l, ry])
+        # warn("z: {}".format(x))
     if coordinate == 'lidar':
         ret = camera_to_lidar_box(np.array(ret))
 
@@ -781,6 +787,7 @@ def box_transform(boxes, tx, ty, tz, r=0, coordinate='lidar'):
         else:
             boxes_corner[idx] = point_transform(
                 boxes_corner[idx], tx, ty, tz, ry=r)
+
 
     return corner_to_center_box3d(boxes_corner, coordinate=coordinate)
 
