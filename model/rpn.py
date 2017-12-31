@@ -127,7 +127,7 @@ class MiddleAndRPN:
             self.reg_loss = smooth_l1(r_map * self.pos_equal_one_for_reg, self.targets * self.pos_equal_one_for_reg, sigma) / self.pos_equal_one_sum
             self.reg_loss = tf.reduce_sum(self.reg_loss)
 
-            self.loss = tf.reduce_sum(5.0 * self.cls_loss + self.reg_loss)
+            self.loss = tf.reduce_sum(20.0 * self.cls_loss + self.reg_loss)
 
             self.delta_output = r_map 
             self.prob_output = self.p_pos

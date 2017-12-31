@@ -31,7 +31,7 @@ def data_augmentation(f_lidar, f_label):
     shift_x = [-0.4, 0.4]
     shift_y = [-0.4, 0.4]
     shift_z = [-0.1, 0.1]
-    angle_r = [-np.pi/8, np.pi/8]
+    angle_r = [-np.pi/10, np.pi/10]
     scale = [0.95, 1.05] 
 
     lidar = np.fromfile(f_lidar, dtype=np.float32).reshape((-1, 4))
@@ -46,21 +46,33 @@ def data_augmentation(f_lidar, f_label):
         # global shift
         t_x = np.random.uniform(shift_x[0], shift_x[1])
         t_y = np.random.uniform(shift_y[0], shift_y[1])
-        t_z = np.random.uniform(shift_z[0], shift_z[1])
+        t_z = 0 #np.random.uniform(shift_z[0], shift_z[1])
 
         lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=t_x, ty=t_y, tz=t_z, rx=0, ry=0, rz=0)
-        gt_box3d = box_transform(gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=0, coordinate='camera')
+
+        lidar_center_gt_box3d = camera_to_lidar_box(gt_box3d)
+        lidar_center_gt_box3d = box_transform(lidar_center_gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=0, coordinate='lidar')
+        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
+
     elif choice == 1:
         # global rotation
         angle = np.random.uniform(angle_r[0], angle_r[1])
 
         lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=0, ty=0, tz=0, rx=0, ry=0, rz=angle)
-        gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=-angle, coordinate='camera')
+
+        #WIP:
+        lidar_center_gt_box3d = camera_to_lidar_box(gt_box3d)
+        lidar_center_gt_box3d = box_transform(lidar_center_gt_box3d, tx=0, ty=0, tz=0, r=angle, coordinate='lidar')
+        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
+
+        # gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=-angle, coordinate='camera')
     else:
         # global scaling
         factor = np.random.uniform(scale[0], scale[1])
         lidar[:, 0:3] = lidar[:, 0:3] * factor
-        gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
+        lidar_center_gt_box3d = camera_to_lidar_box(gt_box3d)
+        lidar_center_gt_box3d[:, 0:6] = lidar_center_gt_box3d[:, 0:6] * factor
+        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
 
     label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], coordinate='camera')[0]  # (N')
     calib_file = f_lidar.replace('velodyne', 'calib').replace('bin', 'txt')

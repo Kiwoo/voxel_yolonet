@@ -1,12 +1,5 @@
 #!/usr/bin/env python
 # -*- coding:UTF-8 -*-
-
-# File Name : model.py
-# Purpose :
-# Creation Date : 09-12-2017
-# Last Modified : 2017年12月14日 星期四 02时39分46秒
-# Created By : Jeasine Ma [jeasinema[at]gmail[dot]com]
-
 import sys
 import os
 import tensorflow as tf
