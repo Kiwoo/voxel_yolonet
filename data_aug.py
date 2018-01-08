@@ -158,7 +158,7 @@ def data_augmentation(f_lidar, f_label):
     # warn("end: lidar: {} label: {}".format(np.shape(lidar), np.shape(label)))
     return lidar, label
 
-def image_augmentation(f_rgb, f_label, width, height, jitter, hue, saturation, exposure):
+def image_augmentation(f_rgb, f_label, width, height, jitter, hue, saturation, exposure, posneg_ratio):
     rgb_imgs = []
     confs = []
     org_imgs = []
@@ -235,7 +235,7 @@ def image_augmentation(f_rgb, f_label, width, height, jitter, hue, saturation, e
     # if inferenced iou is high, then the bounding boxes are correctly inferenced by 3D bounding boxes.
     # this is the st]rategry I am taking for simple, mini 2D classifier.
 
-    for idx in range(len(gt_box2d)*4):
+    for idx in range(len(gt_box2d)*posneg_ratio):
         x = np.random.randint(0, img_width)
         y = np.random.randint(0, img_height)
         h = np.random.randint(40, 200)

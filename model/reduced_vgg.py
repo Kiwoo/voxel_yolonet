@@ -12,6 +12,7 @@ from misc_util import warn
 from utils.colorize import *
 
 VGG_MEAN = [103.939, 116.779, 123.68]
+small_addon_for_BCE=1e-6
 
 class vgg(object):
 
@@ -67,7 +68,8 @@ class vgg(object):
             warn("shape: {}".format(np.shape(temp)))
             self.prob = tf.nn.sigmoid(self.dense(temp, 1, 'prob'))
             warn("shape: {}".format(np.shape(self.prob)))
-            self.loss = tf.nn.l2_loss(self.conf - self.prob, name = 'loss')
+            self.loss = tf.reduce_mean(-self.conf * tf.log(self.prob+small_addon_for_BCE) - (1 - self.conf) * tf.log(1-self.prob+small_addon_for_BCE))
+            # self.loss = tf.nn.l2_loss(self.conf - self.prob, name = 'loss')
 
     def dense(self, x, size, name):
         w = tf.get_variable(name+'/w', [x.get_shape()[1], size], initializer=tf.contrib.layers.xavier_initializer())
@@ -206,7 +208,9 @@ class reduced_vgg(object):
         #     (N, N') label
         imgs = data[0]
         confs = data[1]
-        # warn("shape: {} {}".format(np.shape(vox_feature), np.shape(doubled_vox_feature))) 
+        # warn("shape: {} {}".format(np.shape(imgs), np.shape(confs))) 
+        confs[confs>=0.6] = 1.0
+        confs[confs<0.6] = 0.0
         
         input_feed = {}
         for idx in range(len(self.avail_gpus)):
@@ -368,20 +372,51 @@ class reduced_vgg(object):
         imgs = data[0]
         confs = data[1]
         # warn("shape: {} {}".format(np.shape(vox_feature), np.shape(doubled_vox_feature))) 
+
+        confs[confs>=0.5] = 1.0
+        confs[confs<0.5] = 0.0
         
         input_feed = {}
         for idx in range(len(self.avail_gpus)):
             input_feed[self.imgs[idx]] = imgs[idx]
             input_feed[self.confs[idx]] = confs[idx]
 
-        output_feed = [self.batch_loss, self.confs]
+        output_feed = [self.batch_loss, self.prob_output]
 
         if summary:
             output_feed.append(self.train_summary)
         # TODO: multi-gpu support for test and predict step
-        batch_loss, confs, _ =  session.run(output_feed, input_feed)
+        batch_loss, prob_output, _ =  session.run(output_feed, input_feed)
 
-        return batch_loss
+        prob_output = np.squeeze(prob_output)
+
+        # warn("conf: {}".format(np.shape(confs)))
+        prob_output[prob_output>=0.5] = 1.0
+        prob_output[prob_output<0.5] = 0.0
+        # warn("prob: {}".format(np.shape(prob_output)))
+
+        confs = np.concatenate(confs, axis=0)
+        # warn("conf: {}".format(np.shape(confs)))
+
+        correct_precision = np.equal(confs, prob_output)
+        correct_precision = correct_precision.astype(int)
+        # warn("result: {}".format(correct_precision))
+
+        gt_neg = (confs == 0.0)
+        gt_neg = np.sum(gt_neg.astype(int))
+        gt_pos = (confs == 1.0)
+        gt_pos = np.sum(gt_pos.astype(int))
+        true_pos = np.logical_and((confs == 1.0), (prob_output == 1.0))
+        true_neg = np.logical_and((confs == 0.0), (prob_output == 0.0))
+        false_pos = np.logical_and((confs == 0.0), (prob_output == 1.0))
+        false_neg = np.logical_and((confs == 1.0), (prob_output == 0.0))
+        true_pos = np.sum(true_pos.astype(int))
+        true_neg = np.sum(true_neg.astype(int))
+        false_pos = np.sum(false_pos.astype(int))
+        false_neg = np.sum(false_neg.astype(int))
+
+
+        return batch_loss, gt_pos, gt_neg, true_pos, true_neg, false_pos, false_neg
 
 
 def average_gradients(tower_grads):

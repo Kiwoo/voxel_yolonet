@@ -23,7 +23,7 @@ parser.add_argument('-i', '--max-epoch', type=int, nargs='?', default=200,
                     help='max epoch')
 parser.add_argument('-n', '--tag', type=str, nargs='?', default='default',
                     help='set log tag')
-parser.add_argument('-b', '--single-batch-size', type=int, nargs='?', default=60,
+parser.add_argument('-b', '--single-batch-size', type=int, nargs='?', default=16,
                     help='set batch size for each gpu')
 parser.add_argument('-l', '--lr', type=float, nargs='?', default=0.001,
                     help='set learning rate')
@@ -156,13 +156,26 @@ def main(_):
                         save_result_folder = os.path.join(save_result_dir, "{}".format(iter))
                         mkdir_p(save_result_folder)
                         total_loss = 0
+                        gt_pos_a = 0
+                        gt_neg_a = 0
+                        true_pos_a = 0
+                        true_neg_a = 0
+                        false_pos_a = 0
+                        false_neg_a = 0
                         for idx in range(total_iter):
                             t0 = time.time()
-                            loss = model.validate_step(sess, valid_loader.load(), output_path= save_result_folder, summary=True, visualize = False)
+                            loss, gt_pos, gt_neg, true_pos, true_neg, false_pos, false_neg = model.validate_step(sess, valid_loader.load(), output_path= save_result_folder, summary=True, visualize = False)
                             t1= time.time()
                             total_loss = total_loss + loss
+                            gt_pos_a += gt_pos
+                            gt_neg_a += gt_neg
+                            true_pos_a += true_pos
+                            true_neg_a += true_neg
+                            false_pos_a += false_pos
+                            false_neg_a += false_neg                            
                             # warn("valid: {:.2f} sec | remaining {:.2f} sec {}/{}".format(t1-t0, (t1-t0)*(total_iter-idx), idx, total_iter))
-                        warn("validation: {} epoch: total loss sum: {}".format(model.epoch.eval(), total_loss))
+                        warn("validation: {} epoch: total loss sum: {} gt pos: {} gt neg: {} TP {} TN {} FP {} FN {}".format(model.epoch.eval(), total_loss, gt_pos_a, gt_neg_a, true_pos_a, true_neg_a, false_pos_a, false_neg_a))
+                        warn("mean accuracy: {}".format((true_pos_a+true_neg_a)/(gt_pos_a + gt_neg_a)))
                     #     cmd = "./evaluate_object {}".format(iter)
                     #     os.system(cmd)
 

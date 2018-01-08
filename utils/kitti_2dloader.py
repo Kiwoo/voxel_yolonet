@@ -50,7 +50,7 @@ class KittiLoader(object):
         self.multi_gpu_sum = multi_gpu_sum
         self.progress = 0
 
-        self.ratioPosNeg = 4
+        self.ratioPosNeg = 1
 
         # warn("dir: {}".format(self.object_dir))
 
@@ -145,7 +145,7 @@ class KittiLoader(object):
         # img = cv2.imread(f_rgb[load_index])
         # save_dir = os.path.join(dataset_dir, dataset)
         # warn("before img aug")
-        cropped_imgs, confs = image_augmentation(self.f_rgb[load_index], self.f_label[load_index], width, height, jitter, hue, saturation, exposure)
+        cropped_imgs, confs = image_augmentation(self.f_rgb[load_index], self.f_label[load_index], width, height, jitter, hue, saturation, exposure, self.ratioPosNeg)
         # warn("num img: {} num confs: {}".format(len(cropped_imgs), len(confs)))
 
         try:
