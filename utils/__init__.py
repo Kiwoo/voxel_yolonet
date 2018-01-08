@@ -12,3 +12,4 @@ from utils.colorize import *
 from utils.kitti_loader import *
 from utils.utils import *
 from utils.preprocess import *
+from utils.kitti_2dloader import *

@@ -49,7 +49,12 @@ def clip_by_projection(point_cloud, calib_file, h, w):
 
 def voxelize(file, lidar = None, voxel_size = voxel_size, T = max_point_number):
 
-    # t0 = time.time()
+    # T = max_point_number is different from cfg.VOXEL_POINT_COUNT
+    # Now we will training for multiple different value of T while keep VOXEL_POINT_COUNT same
+    # This is for multi-scale training.
+    
+    # T is always less than cfg.VOXEL_POINT_COUNT
+
     if lidar is not None:
         # warn("lidar yes")
         point_cloud = lidar
@@ -57,16 +62,10 @@ def voxelize(file, lidar = None, voxel_size = voxel_size, T = max_point_number):
         # warn("lidar None")
         point_cloud = np.fromfile(file, dtype=np.float32).reshape(-1, 4)
     np.random.shuffle(point_cloud)
-    # warn('voxel file: {}'.format(file))
-    calib_file = file.replace('velodyne', 'calib').replace('bin', 'txt')
-    # # len1 = len(point_cloud)
+    # calib_file = file.replace('velodyne', 'calib').replace('bin', 'txt')
 
-    point_cloud = clip_by_projection(point_cloud, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
+    # point_cloud = clip_by_projection(point_cloud, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
 
-    # len2 = len(point_cloud)
-    # t1 = time.time()
-
-    # warn("voxelize: {}".format(file))
 
     shifted_coord = point_cloud[:, :3] + lidar_coord
     # reverse the point cloud coordinate (X, Y, Z) -> (Z, Y, X)
@@ -93,13 +92,12 @@ def voxelize(file, lidar = None, voxel_size = voxel_size, T = max_point_number):
     coordinate_buffer = np.unique(voxel_index, axis=0)
 
     K = len(coordinate_buffer)
-    # T = max_point_number
 
     # [K, 1] store number of points in each voxel grid
     number_buffer = np.zeros(shape=(K), dtype=np.int64)
 
-    # [K, T, 7] feature buffer as described in the paper
-    feature_buffer = np.zeros(shape=(K, T, 7), dtype=np.float32)
+    # [K, cfg.VOXEL_POINT_COUNT, 7] feature buffer as described in the paper
+    feature_buffer = np.zeros(shape=(K, cfg.VOXEL_POINT_COUNT, 7), dtype=np.float32)
 
     # build a reverse index for coordinate buffer
     index_buffer = {}
@@ -115,11 +113,6 @@ def voxelize(file, lidar = None, voxel_size = voxel_size, T = max_point_number):
 
     feature_buffer[:, :, -3:] = feature_buffer[:, :, :3] - \
         feature_buffer[:, :, :3].mean(axis=1, keepdims=True)
-
-    # t2 = time.time()
-
-    # warn("clipping by projection: {} {} -> {} -> {}".format(t1-t0, len1, len2, len3))
-    # warn("voxelizing: {}".format(t2-t1))
 
        
     name, extension = os.path.splitext(file)

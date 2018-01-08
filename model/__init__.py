@@ -10,3 +10,4 @@
 from model.group_pointcloud import *
 from model.rpn import *
 from model.model import *
+from model.reduced_vgg import *

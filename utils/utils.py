@@ -370,6 +370,81 @@ def draw_lidar_box3d_on_image(img, boxes3d, scores, gt_boxes3d=np.array([]),
 
     return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
+def draw_lidar_box3d_on_image_test(img, boxes3d, scores, color=(0, 255, 255), thickness=1):
+    # Input:
+    #   img: (h, w, 3)
+    #   boxes3d (N, 7) [x, y, z, h, w, l, r]
+    #   scores
+    #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
+    img = img.copy()
+    projections = lidar_box3d_to_camera_box(boxes3d, cal_projection=True)
+
+    # draw projections
+    for qs in projections:
+        for k in range(0, 4):
+            i, j = k, (k + 1) % 4
+            cv2.line(img, (qs[i, 0], qs[i, 1]), (qs[j, 0],
+                                                 qs[j, 1]), color, thickness, cv2.LINE_AA)
+
+            i, j = k + 4, (k + 1) % 4 + 4
+            cv2.line(img, (qs[i, 0], qs[i, 1]), (qs[j, 0],
+                                                 qs[j, 1]), color, thickness, cv2.LINE_AA)
+
+            i, j = k, k + 4
+            cv2.line(img, (qs[i, 0], qs[i, 1]), (qs[j, 0],
+                                                 qs[j, 1]), color, thickness, cv2.LINE_AA)
+
+    return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+
+def draw_lidar_box3d_to_bbox2d_on_image(img, boxes3d, scores, gt_boxes3d=np.array([]), color=(0, 255, 255), gt_color=(255, 0, 255), thickness=1):
+    # Input:
+    #   img: (h, w, 3)
+    #   boxes3d (N, 7) [x, y, z, h, w, l, r]
+    #   scores
+    #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
+    img = img.copy()
+    projections = lidar_box3d_to_camera_box(boxes3d, cal_projection=False)
+    gt_projections = lidar_box3d_to_camera_box(gt_boxes3d, cal_projection=False)
+
+    # draw projections
+    for pr in projections:
+        x1 = pr[0]
+        y1 = pr[1]
+        x2 = pr[2]
+        y2 = pr[3]
+        cv2.line(img, (x1, y1), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x1, y1), (x2, y1), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x2, y1), color, thickness, cv2.LINE_AA)
+
+    for gt in gt_projections:
+        x1 = gt[0]
+        y1 = gt[1]
+        x2 = gt[2]
+        y2 = gt[3]
+        cv2.line(img, (x1, y1), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x1, y1), (x2, y1), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x2, y1), color, thickness, cv2.LINE_AA)
+
+
+    return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+
+def draw_bbox2d_on_image(img, boxes2d, color=(0,255,255), thickness=1):
+    img = img.copy()
+
+    for box in boxes2d:
+        x1 = int(box[0])
+        y1 = int(box[1])
+        x2 = int(box[2])
+        y2 = int(box[3])
+        cv2.line(img, (x1, y1), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x1, y1), (x2, y1), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x2, y1), color, thickness, cv2.LINE_AA)
+    return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+
+
 
 def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, gt_boxes3d=np.array([]),
                                  color=(0, 255, 255), gt_color=(255, 0, 255), thickness=1, factor=1):
@@ -397,6 +472,34 @@ def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, gt_boxes3d=np.array(
         cv2.line(img, (int(x3), int(y3)), (int(x0), int(y0)),
                  gt_color, thickness, cv2.LINE_AA)
 
+    # draw detections
+    for box in corner_boxes3d:
+        x0, y0 = lidar_to_bird_view(*box[0, 0:2], factor=factor)
+        x1, y1 = lidar_to_bird_view(*box[1, 0:2], factor=factor)
+        x2, y2 = lidar_to_bird_view(*box[2, 0:2], factor=factor)
+        x3, y3 = lidar_to_bird_view(*box[3, 0:2], factor=factor)
+
+        # warn("x0: {} y0: {} x1: {} y1: {} x2: {} y2: {} x3: {} y3:{}".format(int(x0), int(y0), int(x1), int(y1), int(x2), int(y2), int(x3), int(y3)))
+
+        cv2.line(img, (int(x0), int(y0)), (int(x1), int(y1)),
+                 color, thickness, cv2.LINE_AA)
+        cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)),
+                 color, thickness, cv2.LINE_AA)
+        cv2.line(img, (int(x2), int(y2)), (int(x3), int(y3)),
+                 color, thickness, cv2.LINE_AA)
+        cv2.line(img, (int(x3), int(y3)), (int(x0), int(y0)),
+                 color, thickness, cv2.LINE_AA)
+
+    return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+
+def draw_lidar_box3d_on_birdview_test(birdview, boxes3d, scores, color=(0, 255, 255), thickness=1, factor=1):
+    # Input:
+    #   birdview: (h, w, 3)
+    #   boxes3d (N, 7) [x, y, z, h, w, l, r]
+    #   scores
+    #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
+    img = birdview.copy()
+    corner_boxes3d = center_to_corner_box3d(boxes3d, coordinate='lidar')
     # draw detections
     for box in corner_boxes3d:
         x0, y0 = lidar_to_bird_view(*box[0, 0:2], factor=factor)
@@ -449,8 +552,61 @@ def label_to_gt_box3d(labels, cls='Car', coordinate='camera'):
         boxes3d.append(np.array(boxes3d_a_label).reshape(-1, 7))
     return boxes3d
 
+def label_to_gt_box2d(labels, cls='Car', coordinate='camera'):
+    # Input:
+    #   label: (N, N')
+    #   cls: 'Car' or 'Pedestrain' or 'Cyclist'
+    #   coordinate: 'camera' or 'lidar'
+    # Output:
+    #   (N, N', 7)
+    boxes2d = []
+    if cls == 'Car':
+        acc_cls = ['Car', 'Van']
+    elif cls == 'Pedestrian':
+        acc_cls = ['Pedestrian']
+    elif cls == 'Cyclist':
+        acc_cls = ['Cyclist']
+    else:
+        acc_cls = []
 
-def box3d_to_label(batch_box3d, batch_cls, batch_score=[], coordinate='camera'):
+    for label in labels:
+        boxes2d_a_label = []
+        for line in label:
+            ret = line.split()
+            if ret[0] in acc_cls or acc_cls == []:
+                x_min, y_min, x_max, y_max = [float(i) for i in ret[4:8]]
+                box2d = np.array([x_min, y_min, x_max, y_max])
+                boxes2d_a_label.append(box2d)
+
+        boxes2d.append(np.array(boxes2d_a_label).reshape(-1, 4))
+    return boxes2d
+
+def label_to_num_obj(f_labels, cls='Car'):
+    if cls == 'Car':
+        acc_cls = ['Car', 'Van']
+    elif cls == 'Pedestrian':
+        acc_cls = ['Pedestrian']
+    elif cls == 'Cyclist':
+        acc_cls = ['Cyclist']
+    else:
+        acc_cls = []
+
+    num_obj = 0 
+
+    num_f_labels = len(f_labels)
+
+    for idx, f_label in enumerate(f_labels):
+        # if idx % 10 == 0:
+        #     warn("loading {} / {}".format(idx, num_f_labels))
+        label = np.array([line for line in open(f_label, 'r').readlines()])
+
+        for line in label:
+            ret = line.split()
+            if ret[0] in acc_cls or acc_cls == []:
+                num_obj = num_obj + 1
+    return num_obj
+
+def box3d_to_label(batch_box3d, batch_cls, batch_score=[], include_score = False, coordinate='camera'):
     # Input:
     #   (N, N', 7) x y z h w l r
     #   (N, N')
@@ -458,8 +614,10 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], coordinate='camera'):
     #   coordinate(input): 'camera' or 'lidar'
     # Output:
     #   label: (N, N') N batches and N lines
+    # warn("to label")
     batch_label = []
-    if batch_score:
+    # warn("shape: {} {} {}".format(np.shape(batch_box3d), np.shape(batch_cls), np.shape(batch_score)))
+    if include_score:
         template = '{} ' + ' '.join(['{:.4f}' for i in range(15)]) + '\n'
         for boxes, scores, clses in zip(batch_box3d, batch_score, batch_cls):
             label = []
@@ -476,7 +634,7 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], coordinate='camera'):
                 x, y, z, h, w, l, r = box3d
                 box3d = [h, w, l, x, y, z, r]
                 label.append(template.format(
-                    cls, 0, 0, 0, *box2d, *box3d, score))
+                    cls, 0, 0, -10, *box2d, *box3d, float(score)))
             batch_label.append(label)
     else:
         template = '{} ' + ' '.join(['{:.4f}' for i in range(14)]) + '\n'
@@ -954,6 +1112,43 @@ def projectToImage(pts_3D, P):
     pts_2D = np.delete(pts_2D, 2, 0)
 
     return pts_2D
+
+def distort_image(img, hue, sat, val):
+    hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    # warn("hsv_img shape: {}".format(np.shape(hsv_img)))
+    
+    h, s, v = cv2.split(hsv_img)
+
+    h = h + hue*255
+    h[h>255] -= 255
+    h[h<0] += 255
+
+    s = s * sat
+    v = v * val
+
+    h = h.astype(np.uint8)
+    s = s.astype(np.uint8)
+    v = v.astype(np.uint8)
+
+    hsv_img = cv2.merge([h,s,v])
+    out = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
+
+    return img
+
+def rand_scale(s):
+    scale = np.random.uniform(1, s)
+    if(np.random.randint(1,10000)%2): 
+        return scale
+    return 1./scale
+
+def random_distort_image(img, hue, saturation, exposure):
+    dhue = np.random.uniform(-hue, hue)
+    dsat = rand_scale(saturation)
+    dexp = rand_scale(exposure)
+    res = distort_image(img, dhue, dsat, dexp)
+    return res
+
+
 
 if __name__ == '__main__':
     pass

@@ -174,7 +174,7 @@ if __C.DETECT_OBJ == 'Cyclist':
 # for rpn nms
 __C.RPN_NMS_POST_TOPK = 50
 __C.RPN_NMS_THRESH = 0.5
-__C.RPN_SCORE_THRESH = 0.90
+__C.RPN_SCORE_THRESH = 0.70
 
 
 # utils
