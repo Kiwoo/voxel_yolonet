@@ -18,7 +18,7 @@ from misc_util import *
 warn("test")
 
 parser = argparse.ArgumentParser(description='training')
-parser.add_argument('-i', '--max-epoch', type=int, nargs='?', default=60,
+parser.add_argument('-i', '--max-epoch', type=int, nargs='?', default=100,
                     help='max epoch')
 parser.add_argument('-n', '--tag', type=str, nargs='?', default='default',
                     help='set log tag')

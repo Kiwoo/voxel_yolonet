@@ -94,9 +94,9 @@ def data_augmentation(f_lidar, f_label):
                 _count = 0
                 # warn("check :{}".format(idx))
                 while is_collision and _count < 10:
-                    t_rz = np.random.uniform(-np.pi / 10, np.pi / 10)
-                    t_x = np.random.normal()
-                    t_y = np.random.normal()
+                    t_rz = np.random.uniform(-np.pi / 8, np.pi / 8)
+                    t_x = 2*np.random.normal()
+                    t_y = 2*np.random.normal()
                     t_z = np.random.normal()
                     # check collision
                     # warn("shape: {}".format(np.shape(lidar_center_gt_box3d[[idx]])))
