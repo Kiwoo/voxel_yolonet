@@ -37,6 +37,7 @@ def data_augmentation(f_lidar, f_label):
 
     lidar = np.fromfile(f_lidar, dtype=np.float32).reshape((-1, 4))
 
+
     calib_file = f_lidar.replace('velodyne', 'calib').replace('bin', 'txt')
     lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
 
@@ -44,7 +45,6 @@ def data_augmentation(f_lidar, f_label):
     cls = np.array([line.split()[0] for line in label])  # (N')
     gt_box3d = label_to_gt_box3d(np.array(label)[np.newaxis, :], cls='', coordinate='lidar')[
         0]  # (N', 7) x, y, z, h, w, l, r
-
     # warn("lidar: {} lable: {} choice: {}".format(np.shape(lidar), label, choice))
 
     # Random drop out every time
@@ -149,11 +149,11 @@ def data_augmentation(f_lidar, f_label):
         lidar_center_gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
         gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
 
-    # warn("data aug")
     # To clip after rotation and translation
-    lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
-    label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], coordinate='camera')[0]  # (N')
+    
+    # lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
 
+    label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], coordinate='camera')[0]  # (N')
 
     # warn("end: lidar: {} label: {}".format(np.shape(lidar), np.shape(label)))
     return lidar, label
