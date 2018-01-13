@@ -176,6 +176,9 @@ __C.RPN_NMS_POST_TOPK = 50
 __C.RPN_NMS_THRESH = 0.5
 __C.RPN_SCORE_THRESH = 0.70
 
+# for 2d classifier patch
+__C.FALSE_PATCH_THRESH = 0.50
+
 
 # utils
 __C.CORNER2CENTER_AVG = True  # average version or max version
