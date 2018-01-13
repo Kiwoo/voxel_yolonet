@@ -64,6 +64,7 @@ class KittiLoader(object):
                 self.f_lidar.append(os.path.join(self.object_dir, 'velodyne', line+'.bin'))
                 self.f_label.append(os.path.join(self.object_dir, 'label_2', line+'.txt'))
 
+
             self.f_rgb_valid = []
             self.f_lidar_valid = []
             self.f_label_valid = []
@@ -175,7 +176,6 @@ class KittiLoader(object):
                
 
                 ##### AFTER DATA AUGMENTATION STABILIZED ####
-
                 rgb.append(cv2.resize(cv2.imread(self.f_rgb[load_index]), (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
                 lidar, label = data_augmentation(f_lidar = self.f_lidar[load_index], f_label = self.f_label[load_index])
                 raw_lidar.append(lidar)
@@ -244,7 +244,6 @@ class KittiLoader(object):
         try:
             if self.is_testset and self.already_extract_data >= self.dataset_size:
                 return None
-
             buff = self.dataset_queue.get()
             label = buff[0]
             vox_feature = buff[1][0]
@@ -303,7 +302,6 @@ class KittiLoader(object):
                 voxel.append(voxelize(file = self.f_lidar_valid[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
                 doubled_voxel.append(voxelize(file = self.f_lidar_valid[load_index], lidar = lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
                 t1 = time.time()
-                warn("load success")
 
             except:
                 warn("Load Specified: Loading Error!!")
@@ -344,6 +342,70 @@ class KittiLoader(object):
 
         return ret
 
+    def load_specified_train(self, load_indices=None):
+        # Load without data augmentation
+        labels, tag, voxel, doubled_voxel, rgb, raw_lidar = [], [], [], [], [], []
+        voxel_size = np.array([cfg.VOXEL_Z_SIZE, cfg.VOXEL_Y_SIZE, cfg.VOXEL_X_SIZE], dtype=np.float32)
+        double_voxel_size = 2 * voxel_size
+
+        
+        if load_indices is None:
+            load_indices = np.random.randint(len(self.f_rgb), size = self.batch_size)
+
+        for load_index in load_indices:
+            try:
+                t0 = time.time()
+                rgb.append(cv2.resize(cv2.imread(self.f_rgb[load_index]), (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
+                lidar = np.fromfile(self.f_lidar[load_index], dtype=np.float32).reshape((-1, 4))
+
+                calib_file = self.f_lidar[load_index].replace('velodyne', 'calib').replace('bin', 'txt')
+                lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
+
+                raw_lidar.append(lidar)
+                labels.append([line for line in open(self.f_label[load_index], 'r').readlines()])
+                tag.append(self.data_tag[load_index])
+                voxel.append(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
+                doubled_voxel.append(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
+                t1 = time.time()
+                # warn("load success")
+
+            except:
+                warn("Load Specified: Loading Error!! {}".format(tag))
+        
+        # only for voxel -> [gpu, k_single_batch, ...]
+        vox_feature, vox_number, vox_coordinate = [], [], []
+
+
+        single_batch_size = int(self.batch_size/self.multi_gpu_sum)
+        for idx in range(self.multi_gpu_sum):
+            # warn("single")
+            _, per_vox_feature, per_vox_number, per_vox_coordinate = build_input(voxel[idx*single_batch_size:(idx+1)*single_batch_size])
+            vox_feature.append(per_vox_feature)
+            vox_number.append(per_vox_number)
+            vox_coordinate.append(per_vox_coordinate)
+
+        doubled_vox_feature, doubled_vox_number, doubled_vox_coordinate = [], [], []            
+        for idx in range(self.multi_gpu_sum):
+            # warn("doubled")
+            _, per_vox_feature, per_vox_number, per_vox_coordinate = build_input(doubled_voxel[idx*single_batch_size:(idx+1)*single_batch_size])
+            doubled_vox_feature.append(per_vox_feature)
+            doubled_vox_number.append(per_vox_number)
+            doubled_vox_coordinate.append(per_vox_coordinate)
+
+        ret = (
+            np.array(tag),
+            np.array(labels),
+            np.array(vox_feature),
+            np.array(vox_number),
+            np.array(vox_coordinate),
+            np.array(doubled_vox_feature),
+            np.array(doubled_vox_number),
+            np.array(doubled_vox_coordinate),
+            np.array(rgb),
+            np.array(raw_lidar)
+        )
+
+        return ret
 
     def loader_worker_main(self, batch_size):
         if self.require_shuffle:
