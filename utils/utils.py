@@ -281,7 +281,6 @@ def lidar_box3d_to_camera_box(boxes3d, cal_projection=False):
     num = len(boxes3d)
     boxes2d = np.zeros((num, 4), dtype=np.int32)
     projections = np.zeros((num, 8, 2), dtype=np.float32)
-
     lidar_boxes3d_corner = center_to_corner_box3d(boxes3d, coordinate='lidar')
     P2 = np.array(cfg.MATRIX_P2)
 
@@ -294,15 +293,15 @@ def lidar_box3d_to_camera_box(boxes3d, cal_projection=False):
         points[:, 1] /= points[:, 2]
 
         projections[n] = points[:, 0:2]
-        minx = int(np.min(points[:, 0]))
-        maxx = int(np.max(points[:, 0]))
-        miny = int(np.min(points[:, 1]))
-        maxy = int(np.max(points[:, 1]))
+        
+        minx = int(np.clip(np.min(points[:, 0]), 0, None))
+        maxx = int(np.clip(np.max(points[:, 0]), None, cfg.IMAGE_WIDTH))
+        miny = int(np.clip(np.min(points[:, 1]), 0, None))
+        maxy = int(np.clip(np.max(points[:, 1]), None, cfg.IMAGE_HEIGHT))
 
         boxes2d[n, :] = minx, miny, maxx, maxy
 
     return projections if cal_projection else boxes2d
-
 
 def lidar_to_bird_view_img(lidar, factor=1):
     # Input:
@@ -643,6 +642,7 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], include_score = False
             for box, cls in zip(boxes, clses):
                 if coordinate == 'camera':
                     box3d = box
+                    k = camera_to_lidar_box(box[np.newaxis, :].astype(np.float32))
                     box2d = lidar_box3d_to_camera_box(
                         camera_to_lidar_box(box[np.newaxis, :].astype(np.float32)), cal_projection=False)[0]
                 else:
@@ -654,10 +654,73 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], include_score = False
                 box3d = [h, w, l, x, y, z, r]
                 label.append(template.format(cls, 0, 0, 0, *box2d, *box3d))
             batch_label.append(label)
-        # warn("batch_label: {}".format(batch_label))
 
     return batch_label
 
+
+def box2d_to_label(batch_box2d, batch_cls, batch_gt_idx, batch_iou, batch_gtbox2d, batch_score=[], include_score = False, coordinate='camera'):
+    # Input:
+    #   (N, N', 7) x y z h w l r
+    #   (N, N')
+    #   cls: (N, N') 'Car' or 'Pedestrain' or 'Cyclist'
+    #   coordinate(input): 'camera' or 'lidar'
+    # Output:
+    #   label: (N, N') N batches and N lines
+    # warn("to label")
+    batch_label = []
+    # warn("shape: {} {} {}".format(np.shape(batch_box3d), np.shape(batch_cls), np.shape(batch_score)))
+
+    template_iou = '{} ' + ' '.join(['{:.4f}' for i in range(10)]) + '\n'
+    template_no_iou = '{} ' + ' '.join(['{:.4f}' for i in range(6)]) + '\n'
+
+    for boxes, scores, clses, gt_indices, ious, gtboxes in zip(batch_box2d, batch_score, batch_cls, batch_gt_idx, batch_iou, batch_gtbox2d):
+        label = []
+
+        for box, score, cls, gt_idx, iou in zip(boxes, scores, clses, gt_indices, ious):
+            box2d = box
+            if box2d[0] == 0 and box2d[1] == 0 and box2d[2] == cfg.IMAGE_WIDTH and box2d[3] == cfg.IMAGE_HEIGHT:
+                continue
+            if iou == 0:
+                label.append(template_no_iou.format(cls, *box2d, float(score), float(iou)))
+            else:
+                gtbox2d = gtboxes[gt_idx]
+                # warn("{}".format(cls))
+                # warn("{}".format(*box2d))
+                # warn("{}".format(float(iou)))
+                # warn("{}".format(*gtbox2d))
+                label.append(template_iou.format(cls, *box2d, float(score), float(iou), *gtbox2d))
+        batch_label.append(label)
+
+
+    return batch_label
+
+def box2d_to_label_no_iou(batch_box2d, batch_cls, batch_score=[], include_score = False, coordinate='camera'):
+    # Input:
+    #   (N, N', 7) x y z h w l r
+    #   (N, N')
+    #   cls: (N, N') 'Car' or 'Pedestrain' or 'Cyclist'
+    #   coordinate(input): 'camera' or 'lidar'
+    # Output:
+    #   label: (N, N') N batches and N lines
+    # warn("to label")
+    batch_label = []
+    # warn("shape: {} {} {}".format(np.shape(batch_box3d), np.shape(batch_cls), np.shape(batch_score)))
+
+    template_no_iou = '{} ' + ' '.join(['{:.4f}' for i in range(6)]) + '\n'
+
+    for boxes, scores, clses in zip(batch_box2d, batch_score, batch_cls):
+        label = []
+        for box, score, cls in zip(boxes, scores, clses):
+            box2d = box
+            if box2d[0] == 0 and box2d[1] == 0 and box2d[2] == cfg.IMAGE_WIDTH and box2d[3] == cfg.IMAGE_HEIGHT:
+                continue
+            test = template_no_iou.format(cls, *box2d, float(score), float(0))
+            # warn("test: {}".format(test))
+            label.append(template_no_iou.format(cls, *box2d, float(score), float(0)))
+        batch_label.append(label)
+
+    # warn("label : {} {}".format(len(batch_label), np.shape(batch_label)))
+    return batch_label
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
     # warn("box1: {}, box2: {}".format(box1, box2))
@@ -1037,17 +1100,42 @@ def cal_box3d_iou(boxes3d, gt_boxes3d, cal_3d=0):
 def cal_box2d_iou(boxes2d, gt_boxes2d):
     # Inputs:
     #   boxes2d: (N1, 5) x,y,w,l,r
+
     #   gt_boxes2d: (N2, 5) x,y,w,l,r
     # Outputs:
     #   iou: (N1, N2)
     N1 = len(boxes2d)
     N2 = len(gt_boxes2d)
+
+    warn("N1 N2: {} {}".format(N1, N2))
     output = np.zeros((N1, N2), dtype=np.float32)
     for idx in range(N1):
         for idy in range(N2):
             output[idx, idy] = cal_iou2d(boxes2d[idx], gt_boxes2d[idy])
 
     return output
+
+def rotation_nms(boxes2d, boxes2d_score, thresh):
+    # Inputs:
+    #    boxes2d: (N, 5) x, y, w, l, r
+
+    x = boxes2d[:, 0]
+    y = boxes2d[:, 1]
+    w = boxes2d[:, 2]
+    l = boxes2d[:, 3]
+    r = boxes2d[:, 4]
+
+    order = boxes2d_score.argsort()[::-1]
+    keep_idx = []
+
+    while order.size > 0:
+        i = order[0]
+        keep_idx.append(i)
+        iou = cal_box2d_iou(boxes2d[i], boxes2d[order[1:]])[0]
+        inds = np.where(iou <= thresh)[0]
+        order = order[inds + 1]
+    return keep_idx
+
 
 def load_kitti_calib(velo_calib_path):
 
