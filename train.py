@@ -56,12 +56,14 @@ else:
     split_file = 'trainset.txt'
     valid_file = 'validset.txt'
 
+extract_false_patch = False
+
 def main(_):
     # TODO: split file support
     warn("main start")
     with tf.Graph().as_default():
         global save_model_dir
-        with KittiLoader(object_dir=os.path.join(dataset_dir, dataset), queue_size=6, require_shuffle=True, 
+        with KittiLoader(object_dir=os.path.join(dataset_dir, dataset), queue_size=10, require_shuffle=True, 
                 is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=6, split_file = split_file, valid_file = valid_file, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
         # , \KittiLoader(object_dir=os.path.join(dataset_dir, 'testing'), queue_size=50, require_shuffle=True, 
         #         is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, multi_gpu_sum=cfg.GPU_USE_COUNT) as valid_loader:
@@ -78,7 +80,6 @@ def main(_):
             )
             # tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
             # tf_config.gpu_options.allow_growth = True
-            warn("1")
             with tf.Session(config=config) as sess:
                 model = RPN3D(
                     cls=cfg.DETECT_OBJ,
@@ -90,11 +91,11 @@ def main(_):
                     beta=1,
                     avail_gpus=cfg.GPU_AVAILABLE.split(',')
                 )
-                warn("2")
                 # param init/restore
                 if tf.train.get_checkpoint_state(save_model_dir):
-                    warn("Reading model parameters from %s" % save_model_dir)
+                    # model.saver.restore(sess, save_model_dir+'/checkpoint-00238950')#tf.train.latest_checkpoint(save_model_dir))
                     model.saver.restore(sess, tf.train.latest_checkpoint(save_model_dir))
+                    warn("loading done")
                 else:
                     warn("Created model with fresh parameters.")
                     tf.global_variables_initializer().run()
@@ -108,6 +109,7 @@ def main(_):
                 save_model_interval = 50
                 validate_interval = 4000
 
+
                 # if is_test == True:
                 #     for test_idx in range(5236, train_loader.dataset_size):
                 #         t0 = time.time()
@@ -116,10 +118,12 @@ def main(_):
                 #         warn("test: {:.2f}".format(t1-t0))
                 
                 summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
+
                 while model.epoch.eval() < args.max_epoch:
                     is_summary, is_summary_image, is_validate = False, False, False 
                     progress = model.epoch.eval()/args.max_epoch
                     train_loader.progress = progress
+
 
                     iter = model.global_step.eval()
                     if not iter % summary_interval:
@@ -175,16 +179,27 @@ def main(_):
                         cmd = "./evaluate_object {}".format(iter)
                         os.system(cmd)
 
-                        
-                        # warn("test: {}".format(t1-t0))
-                    # if is_validate:
-                    #     ret = model.test_step(sess, train_loader.load_specified(), summary=True)
-                    #     summary_writer.add_summary(ret[-1], iter)
-                    
-                    # if check_if_should_pause(args.tag):
-                    #     model.saver.save(sess, os.path.join(save_model_dir, 'checkpoint'), global_step=model.global_step)
-                    #     print('pause and save model @ {} steps:{}'.format(save_model_dir, model.global_step.eval()))
-                    #     sys.exit(0)
+
+                    if extract_false_patch == True:         
+                        warn("Extracting false patch from Train set")               
+                        total_iter = int(np.ceil(train_loader.dataset_size / train_loader.batch_size))
+                        # idx = iter
+                        save_result_folder = os.path.join(save_result_dir, "{}_false_patch".format(iter))
+                        mkdir_p(save_result_folder)
+                        for idx in range(total_iter):
+                            t0 = time.time()
+                            if train_loader.batch_size*(idx+1) > train_loader.dataset_size:                                
+                                start_idx = train_loader.dataset_size - train_loader.batch_size
+                                end_idx = train_loader.dataset_size
+                            else:
+                                start_idx = train_loader.batch_size*idx
+                                end_idx = train_loader.batch_size*(idx+1)
+
+                            warn("start: {} end: {}".format(start_idx, end_idx))
+
+                            ret = model.false_patch_step(sess, train_loader.load_specified_train(np.arange(start_idx, end_idx)), output_path= save_result_folder, summary=True, visualize = False)
+                            t1= time.time()
+                            warn("valid: {:.2f} sec | remaining {:.2f} sec {}/{}".format(t1-t0, (t1-t0)*(total_iter-idx), idx, total_iter))
 
                 print('train done. total epoch:{} iter:{}'.format(model.epoch.eval(), model.global_step.eval()))
                 
