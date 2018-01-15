@@ -25,7 +25,7 @@ parser.add_argument('-i', '--aug-amount', type=int, nargs='?', default=1000)
 parser.add_argument('-n', '--num-workers', type=int, nargs='?', default=10)
 args = parser.parse_args()
 
-def data_augmentation(f_lidar, f_label):
+def data_augmentation(f_lidar, f_label, calib_mat, img_width, img_height):
 
     t0 = time.time()
     shift_x = [-1.0, 1.0]
@@ -37,15 +37,19 @@ def data_augmentation(f_lidar, f_label):
 
     lidar = np.fromfile(f_lidar, dtype=np.float32).reshape((-1, 4))
 
-
     calib_file = f_lidar.replace('velodyne', 'calib').replace('bin', 'txt')
-    lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
+
+    lidar = clip_by_projection(lidar, calib_file, img_height, img_width)
+
 
     label = np.array([line for line in open(f_label, 'r').readlines()])
     cls = np.array([line.split()[0] for line in label])  # (N')
-    gt_box3d = label_to_gt_box3d(np.array(label)[np.newaxis, :], cls='', coordinate='lidar')[
+    # warn("shape: {}".format(np.shape(calib_mat[0])))
+    calib_mats = []
+    calib_mats.append(calib_mat)
+    gt_box3d = label_to_gt_box3d(np.array(label)[np.newaxis, :], cls='', coordinate='lidar', calib_mats=calib_mats)[
         0]  # (N', 7) x, y, z, h, w, l, r
-    # warn("lidar: {} lable: {} choice: {}".format(np.shape(lidar), label, choice))
+# warn("lidar: {} lable: {} choice: {}".format(np.shape(lidar), label, choice))
 
     # Random drop out every time
     drop = np.random.uniform(drop_rate[0], drop_rate[1])
@@ -67,8 +71,8 @@ def data_augmentation(f_lidar, f_label):
 
         lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=t_x, ty=t_y, tz=t_z, rx=0, ry=0, rz=angle)
 
-        lidar_center_gt_box3d = box_transform(gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=angle, coordinate='lidar')
-        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
+        lidar_center_gt_box3d = box_transform(gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=angle, coordinate='lidar', calib_mat=calib_mat)
+        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
 
     # elif choice == 1:
     #     # global rotation
@@ -86,7 +90,7 @@ def data_augmentation(f_lidar, f_label):
         lidar_center_gt_box3d = gt_box3d
         if len(lidar_center_gt_box3d) < 15:
             lidar_corner_gt_box3d = center_to_corner_box3d(
-                lidar_center_gt_box3d, coordinate='lidar')
+                lidar_center_gt_box3d, coordinate='lidar', calib_mat=calib_mat)
             changed = False
             for idx in range(len(lidar_corner_gt_box3d)):
                 # TODO: precisely gather the point
@@ -101,7 +105,7 @@ def data_augmentation(f_lidar, f_label):
                     # check collision
                     # warn("shape: {}".format(np.shape(lidar_center_gt_box3d[[idx]])))
                     tmp = box_transform(
-                        lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar')
+                        lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar', calib_mat=calib_mat)
                     is_collision = False
                     for idy in range(idx):
                         x1, y1, w1, l1, r1 = tmp[0][[0, 1, 4, 5, 6]]
@@ -132,14 +136,14 @@ def data_augmentation(f_lidar, f_label):
                     lidar[bound_box, 0:3] = point_transform(
                         lidar[bound_box, 0:3], t_x, t_y, t_z, rz=t_rz)
                     lidar_center_gt_box3d[idx] = box_transform(
-                        lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar')
+                        lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar', calib_mat=calib_mat)
                     changed = True
         # if changed == True and len(lidar_center_gt_box3d) == 1:
         #     warn("changed: {} {} {} {} {} -> {}".format(len(lidar_center_gt_box3d), t_x, t_y, t_z, t_rz, lidar_center_gt_box3d[0]))
         # else:
         #     warn("unchanged")
 
-        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
+        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
         # warn("gt shape after: {}".format(np.shape(gt_box3d)))
 
     else:
@@ -147,14 +151,12 @@ def data_augmentation(f_lidar, f_label):
         factor = np.random.uniform(scale[0], scale[1])
         lidar[:, 0:3] = lidar[:, 0:3] * factor
         lidar_center_gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
-        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
+        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
 
     # To clip after rotation and translation
-    
+
     # lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
-
-    label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], coordinate='camera')[0]  # (N')
-
+    label = box3d_to_label(gt_box3d[np.newaxis, ...], cls[np.newaxis, ...], calib_mats, coordinate='camera')[0]  # (N')
     # warn("end: lidar: {} label: {}".format(np.shape(lidar), np.shape(label)))
     return lidar, label
 

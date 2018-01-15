@@ -181,9 +181,17 @@ class RPN3D(object):
         doubled_vox_feature = data[5]
         doubled_vox_number = data[6]
         doubled_vox_coordinate = data[7]
+        img = data[8]
+        lidar = data[9]
+        calib = data[10]
         print('train', tag)
+        calib_mats = []
+        # warn("batch size: {}".format(label.shape[0]))
+        # for batch in range(label.shape[0]):
+        #     warn("added : {}".format(calib[batch]))
+        #     calib_mats.append(calib[batch])
         pos_equal_one, neg_equal_one, targets = cal_rpn_target(
-            label, self.rpn_output_shape, self.anchors, cls=cfg.DETECT_OBJ, coordinate='lidar')
+            label, self.rpn_output_shape, self.anchors, cls=cfg.DETECT_OBJ, calib_mats=calib, coordinate='lidar')
         pos_equal_one_for_reg = np.concatenate([np.tile(pos_equal_one[..., [0]], 7), np.tile(pos_equal_one[..., [1]], 7)], axis=-1)
         pos_equal_one_sum = np.clip(np.sum(pos_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None) 
         neg_equal_one_sum = np.clip(np.sum(neg_equal_one, axis=(1,2,3)).reshape(-1,1,1,1), a_min=1, a_max=None)
@@ -284,8 +292,9 @@ class RPN3D(object):
         doubled_vox_coordinate = data[7]
         img = data[8]
         lidar = data[9]
+        calib = data[10]
 
-        batch_gt_boxes3d = label_to_gt_box3d(label, cls=self.cls, coordinate='lidar')
+        batch_gt_boxes3d = label_to_gt_box3d(label, cls=self.cls, coordinate='lidar', calib_mats=calib)
         print('predict', tag)
         input_feed = {}
         for idx in range(len(self.avail_gpus)):
@@ -314,7 +323,7 @@ class RPN3D(object):
 
             # TODO: if possible, use rotate NMS
             boxes2d = corner_to_standup_box2d(
-                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', check = True))
+                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', calib_mat=calib[batch_id], check = True))
             ind = session.run(self.box2d_ind_after_nms, {
                 self.boxes2d: boxes2d,
                 self.boxes2d_scores: tmp_scores
@@ -332,9 +341,9 @@ class RPN3D(object):
         if summary:
             # only summry 1 in a batch
             for idx in range(len(img)):                
-                front_image = draw_lidar_box3d_on_image(img[idx], ret_box3d[idx], ret_score[idx], batch_gt_boxes3d[idx])
+                front_image = draw_lidar_box3d_on_image(img[idx], ret_box3d[idx], ret_score[idx], calib[idx], batch_gt_boxes3d[idx])
                 bird_view = lidar_to_bird_view_img(lidar[idx], factor=cfg.BV_LOG_FACTOR)
-                bird_view = draw_lidar_box3d_on_birdview(bird_view, ret_box3d[idx], ret_score[idx], batch_gt_boxes3d[idx], factor=cfg.BV_LOG_FACTOR)
+                bird_view = draw_lidar_box3d_on_birdview(bird_view, ret_box3d[idx], ret_score[idx], calib[idx], batch_gt_boxes3d[idx], factor=cfg.BV_LOG_FACTOR)
 
                 heatmap = colorize(probs[idx, ...], cfg.BV_LOG_FACTOR)
 
@@ -378,8 +387,9 @@ class RPN3D(object):
         doubled_vox_coordinate = data[7]
         img = data[8]
         lidar = data[9]
+        calib = data[10]
 
-        batch_gt_boxes3d = label_to_gt_box3d(label, cls=self.cls, coordinate='lidar')
+        batch_gt_boxes3d = label_to_gt_box3d(label, cls=self.cls, coordinate='lidar', calib_mats=calib)
         # batch_gt_boxes2d = label_to_gt_box2d(label, cls=self.cls, coordinate='camera')
         # warn('validate'.format(tag))
         input_feed = {}
@@ -409,7 +419,7 @@ class RPN3D(object):
 
             # TODO: if possible, use rotate NMS
             boxes2d = corner_to_standup_box2d(
-                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', check = True))
+                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', calib_mat=calib[batch_id], check = True))
             ind = session.run(self.box2d_ind_after_nms, {
                 self.boxes2d: boxes2d,
                 self.boxes2d_scores: tmp_scores
@@ -427,10 +437,10 @@ class RPN3D(object):
         # warn("ret_box3d: {}".format(len(ret_box3d)))
         if visualize == True:
             for idx in range(len(ret_box3d)):
-                front_box_2d = draw_lidar_box3d_to_bbox2d_on_image(img[idx], ret_box3d[idx], ret_score[idx], batch_gt_boxes3d[idx])
-                front_image = draw_lidar_box3d_on_image(img[idx], ret_box3d[idx], ret_score[idx], batch_gt_boxes3d[idx])
+                front_box_2d = draw_lidar_box3d_to_bbox2d_on_image(img[idx], ret_box3d[idx], ret_score[idx], calib[idx], batch_gt_boxes3d[idx])
+                front_image = draw_lidar_box3d_on_image(img[idx], ret_box3d[idx], ret_score[idx], calib[idx], batch_gt_boxes3d[idx])
                 bird_view = lidar_to_bird_view_img(lidar[idx], factor=cfg.BV_LOG_FACTOR)
-                bird_view = draw_lidar_box3d_on_birdview(bird_view, ret_box3d[idx], ret_score[idx], batch_gt_boxes3d[idx], factor=cfg.BV_LOG_FACTOR)
+                bird_view = draw_lidar_box3d_on_birdview(bird_view, ret_box3d[idx], ret_score[idx], calib[idx], batch_gt_boxes3d[idx], factor=cfg.BV_LOG_FACTOR)
 
                 heatmap = colorize(probs[0, ...], cfg.BV_LOG_FACTOR)
 
@@ -444,10 +454,12 @@ class RPN3D(object):
                 cv2.imwrite(save_name, heatmap)
 
         for idx in range(len(ret_box3d)):
-            detected_box3d = lidar_to_camera_box(ret_box3d[idx])
+            detected_box3d = lidar_to_camera_box(ret_box3d[idx], calib[idx])
             cls = np.array([self.cls for _ in range(len(detected_box3d))])
             scores = ret_score[idx]
-            label = box3d_to_label(detected_box3d[np.newaxis, ...], cls[np.newaxis, ...], scores[np.newaxis, ...], include_score = True, coordinate='camera')[0]  # (N')
+            calib_mats = []
+            calib_mats.append(calib[idx])
+            label = box3d_to_label(detected_box3d[np.newaxis, ...], cls[np.newaxis, ...], calib_mats, scores[np.newaxis, ...], include_score = True, coordinate='camera')[0]  # (N')
             # warn("label: {}".format(label))
             f_name = '{}'.format(tag[idx])
             # warn("file name: {}".format(f_name))
@@ -480,6 +492,7 @@ class RPN3D(object):
         doubled_vox_coordinate = data[7]
         img = data[8]
         lidar = data[9]
+        calib = data[10]
 
         batch_gt_boxes2d = label_to_gt_box2d(label, cls=self.cls, coordinate='camera')
 
@@ -517,7 +530,7 @@ class RPN3D(object):
 
             # TODO: if possible, use rotate NMS
             boxes2d = corner_to_standup_box2d(
-                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', check = True))
+                center_to_corner_box2d(tmp_boxes2d, coordinate='lidar', calib_mat=calib[batch_id], check = True))
             ind = session.run(self.box2d_ind_after_nms, {
                 self.boxes2d: boxes2d,
                 self.boxes2d_scores: tmp_scores
@@ -557,7 +570,7 @@ class RPN3D(object):
             if len(ret_box3d[idx]) == 0: 
                 continue
 
-            projected_bbox2d = lidar_box3d_to_camera_box(ret_box3d[idx], cal_projection=False)
+            projected_bbox2d = lidar_box3d_to_camera_box(ret_box3d[idx], calib_mat=calib[idx], cal_projection=False)
 
             # warn("proj gt shape: {} {}".format(np.shape(projected_bbox2d), np.shape(batch_gt_boxes2d[idx])))
 

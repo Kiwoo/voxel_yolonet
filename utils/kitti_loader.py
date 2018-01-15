@@ -24,6 +24,7 @@ from misc_util import warn
 from utils.preprocess import voxelize
 from data_aug import data_augmentation
 from utils.preprocess import clip_by_projection
+from utils.utils import read_calib_mat 
 # from PIL import Image
 
 # for non-raw dataset
@@ -55,7 +56,7 @@ class KittiLoader(object):
         if self.split_file != '':
             # use split file  
             _tag = []
-            self.f_rgb, self.f_lidar, self.f_label = [], [], []
+            self.f_rgb, self.f_lidar, self.f_label, self.f_calib = [], [], [], []
             self.f_voxel = []
             for line in open(self.split_file, 'r').readlines():
                 line = line[:-1] # remove '\n'
@@ -63,17 +64,20 @@ class KittiLoader(object):
                 self.f_rgb.append(os.path.join(self.object_dir, 'image_2', line+'.png'))
                 self.f_lidar.append(os.path.join(self.object_dir, 'velodyne', line+'.bin'))
                 self.f_label.append(os.path.join(self.object_dir, 'label_2', line+'.txt'))
+                self.f_calib.append(os.path.join(self.object_dir, 'calib', line+'.txt'))
 
 
             self.f_rgb_valid = []
             self.f_lidar_valid = []
             self.f_label_valid = []
+            self.f_calib_valid = []
 
             for line in open(self.valid_file, 'r').readlines():
                 line = line[:-1] # remove '\n'
                 self.f_rgb_valid.append(os.path.join(self.object_dir, 'image_2', line+'.png'))
                 self.f_lidar_valid.append(os.path.join(self.object_dir, 'velodyne', line+'.bin'))
                 self.f_label_valid.append(os.path.join(self.object_dir, 'label_2', line+'.txt'))
+                self.f_calib_valid.append(os.path.join(self.object_dir, 'calib', line+'.txt'))
                 self.data_tag_valid =  [name.split('/')[-1].split('.')[-2] for name in self.f_label_valid]
 
 
@@ -84,11 +88,12 @@ class KittiLoader(object):
             self.f_lidar.sort()
             self.f_label = glob.glob(os.path.join(self.object_dir, 'label_2', '*.txt'))
             self.f_label.sort()
-
+            self.f_calib = glob.glob(os.path.join(self.object_dir, 'calib', '*.txt'))
+            self.f_calib.sort()
 
         self.data_tag =  [name.split('/')[-1].split('.')[-2] for name in self.f_label]
         # assert(len(self.f_rgb) == len(self.f_lidar) == len(self.f_label) == len(self.data_tag))
-        # warn("{} {} {}".format(len(self.f_label), len(self.data_tag), len(self.f_lidar)))
+        warn("{} {} {} {}".format(len(self.f_label), len(self.data_tag), len(self.f_lidar), len(self.f_calib)))
         assert(len(self.f_label) == len(self.data_tag) == len(self.f_rgb) == len(self.f_lidar))
         self.dataset_size = len(self.f_label)
         self.validset_size = len(self.f_label_valid)
@@ -148,7 +153,7 @@ class KittiLoader(object):
         else:
             max_voxel_points = cfg.VOXEL_POINT_COUNT - 8 + np.random.randint(9)
 
-        labels, tag, voxel, doubled_voxel, rgb, raw_lidar = [], [], [], [], [], []
+        labels, tag, voxel, doubled_voxel, rgb, raw_lidar, calib = [], [], [], [], [], [], []
         voxel_size = np.array([cfg.VOXEL_Z_SIZE, cfg.VOXEL_Y_SIZE, cfg.VOXEL_X_SIZE], dtype=np.float32)
         double_voxel_size = 2 * voxel_size
 
@@ -156,56 +161,27 @@ class KittiLoader(object):
 
         for _ in range(batch_size):
             try:
-                t0 = time.time()
-                # img = Image.open(self.f_rgb[load_index]).convert('RGB')
-                # width, height = img.size
-                # warn("width, height: {} {}".format(width, height))
-
-                # rgb.append(cv2.resize(cv2.imread(self.f_rgb[load_index]), (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
-                # raw_lidar.append(np.fromfile(self.f_lidar[load_index], dtype=np.float32).reshape((-1, 4)))
-                # labels.append([line for line in open(self.f_label[load_index], 'r').readlines()])
-
-                # tag.append(self.data_tag[load_index])
-                # voxel.append(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
-                # doubled_voxel.append(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
-
-
-                # t1 = time.time()
-                # voxel.append(voxelize(self.f_lidar[load_index], lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
-                # doubled_voxel.append(voxelize(self.f_lidar[load_index], lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
-               
-
+                t0 = time.time()    
                 ##### AFTER DATA AUGMENTATION STABILIZED ####
-                rgb.append(cv2.resize(cv2.imread(self.f_rgb[load_index]), (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
-                lidar, label = data_augmentation(f_lidar = self.f_lidar[load_index], f_label = self.f_label[load_index])
+                rgb_img = cv2.imread(self.f_rgb[load_index])
+                img_height, img_width, _ = rgb_img.shape
+                # warn("height: {} width: {}".format(height, width))
+                rgb.append(cv2.resize(rgb_img, (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
+                calib_mat = read_calib_mat(self.f_calib[load_index])
+                calib.append(calib_mat.copy())
+                lidar, label = data_augmentation(f_lidar = self.f_lidar[load_index], f_label = self.f_label[load_index], calib_mat=calib_mat, img_width = img_width, img_height = img_height)
                 raw_lidar.append(lidar)
                 labels.append(label)
                 tag.append(self.data_tag[load_index])
                 voxel.append(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = voxel_size, T = max_voxel_points))
                 doubled_voxel.append(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = double_voxel_size, T = max_voxel_points))
-                # warn("shape: rgb: {} raw_lidar {} labels {} tag {} voxel {} doubled_voxel {}".format(np.shape(rgb), np.shape(raw_lidar), np.shape(labels), np.shape(tag), np.shape(voxel), np.shape(doubled_voxel)))
                 t1 = time.time()
-
-                # warn("check time: {}".format(t1-t0)) 
-                # warn("rgb : {}".format(np.shape(cv2.resize(cv2.imread(self.f_rgb[load_index]), (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))))
-                # warn("lidar1  : {}".format(np.shape(np.fromfile(self.f_lidar[load_index], dtype=np.float32).reshape((-1, 4)))))
-                # warn("lidar2  : {}".format(np.shape(lidar)))
-                # warn("label1 : {}".format([line for line in open(self.f_label[load_index], 'r').readlines()]))
-                # warn("label2 : {}".format(label))
-
-                # warn("voxel1-1 : {}".format(np.shape(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT)['feature_buffer'])))
-                # warn("voxel1-2 : {}".format(np.shape(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT)['coordinate_buffer'])))
-                # warn("voxel1-3 : {}".format(np.shape(voxelize(file = self.f_lidar[load_index], lidar = None, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT)['number_buffer'])))
-                # warn("voxel2-1 : {}".format(np.shape(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT)['feature_buffer'])))
-                # warn("voxel2-2 : {}".format(np.shape(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT)['coordinate_buffer'])))
-                # warn("voxel2-3 : {}".format(np.shape(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT)['number_buffer'])))
 
                 load_index += 1
 
                 # only for voxel -> [gpu, k_single_batch, ...]
                 vox_feature, vox_number, vox_coordinate = [], [], []
 
-                # warn("file path 1: {}".format(self.f_lidar[0]))
 
                 single_batch_size = int(self.batch_size/self.multi_gpu_sum)
                 for idx in range(self.multi_gpu_sum):
@@ -215,8 +191,6 @@ class KittiLoader(object):
                     vox_number.append(per_vox_number)
                     vox_coordinate.append(per_vox_coordinate)
 
-                # warn("finish")
-
                 doubled_vox_feature, doubled_vox_number, doubled_vox_coordinate = [], [], []            
                 for idx in range(self.multi_gpu_sum):
                     # warn("doubled voxel")
@@ -224,7 +198,8 @@ class KittiLoader(object):
                     doubled_vox_feature.append(per_vox_feature)
                     doubled_vox_number.append(per_vox_number)
                     doubled_vox_coordinate.append(per_vox_coordinate)
-                self.dataset_queue.put_nowait((labels, (vox_feature, vox_number, vox_coordinate), (doubled_vox_feature, doubled_vox_number, doubled_vox_coordinate), rgb, raw_lidar, tag))
+
+                self.dataset_queue.put_nowait((labels, (vox_feature, vox_number, vox_coordinate), (doubled_vox_feature, doubled_vox_number, doubled_vox_coordinate), rgb, raw_lidar, calib, tag))
 
 
             except:
@@ -254,8 +229,9 @@ class KittiLoader(object):
             doubled_vox_coordinate = buff[2][2]
             rgb = buff[3]
             raw_lidar = buff[4]
-            tag = buff[5]
-            self.cur_frame_info = buff[5]
+            calib = buff[5]
+            tag = buff[6]
+            self.cur_frame_info = buff[6]
 
             self.already_extract_data += self.batch_size
 
@@ -269,8 +245,8 @@ class KittiLoader(object):
                 np.array(doubled_vox_number),
                 np.array(doubled_vox_coordinate),
                 np.array(rgb),
-                np.array(raw_lidar)
-
+                np.array(raw_lidar),
+                np.array(calib)
             )
         except:
             print("Dataset empty!")
@@ -279,10 +255,9 @@ class KittiLoader(object):
 
     def load_specified(self, load_indices=None):
         # Load without data augmentation
-        labels, tag, voxel, doubled_voxel, rgb, raw_lidar = [], [], [], [], [], []
+        labels, tag, voxel, doubled_voxel, rgb, raw_lidar, calib = [], [], [], [], [], [], []
         voxel_size = np.array([cfg.VOXEL_Z_SIZE, cfg.VOXEL_Y_SIZE, cfg.VOXEL_X_SIZE], dtype=np.float32)
         double_voxel_size = 2 * voxel_size
-
         
         if load_indices is None:
             load_indices = np.random.randint(len(self.f_rgb_valid), size = self.batch_size)
@@ -290,14 +265,18 @@ class KittiLoader(object):
         for load_index in load_indices:
             try:
                 t0 = time.time()
-                rgb.append(cv2.resize(cv2.imread(self.f_rgb_valid[load_index]), (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
+                rgb_img = cv2.imread(self.f_rgb_valid[load_index])
+                img_height, img_width, _ = rgb_img.shape
+
+                rgb.append(cv2.resize(rgb_img, (cfg.IMAGE_WIDTH, cfg.IMAGE_HEIGHT)))
                 lidar = np.fromfile(self.f_lidar_valid[load_index], dtype=np.float32).reshape((-1, 4))
 
                 calib_file = self.f_lidar_valid[load_index].replace('velodyne', 'calib').replace('bin', 'txt')
-                lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
+                lidar = clip_by_projection(lidar, calib_file, img_height, img_width)
 
                 raw_lidar.append(lidar)
                 labels.append([line for line in open(self.f_label_valid[load_index], 'r').readlines()])
+                calib.append(read_calib_mat(self.f_calib_valid[load_index]))
                 tag.append(self.data_tag_valid[load_index])
                 voxel.append(voxelize(file = self.f_lidar_valid[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
                 doubled_voxel.append(voxelize(file = self.f_lidar_valid[load_index], lidar = lidar, voxel_size = double_voxel_size, T = cfg.VOXEL_POINT_COUNT))
@@ -337,14 +316,15 @@ class KittiLoader(object):
             np.array(doubled_vox_number),
             np.array(doubled_vox_coordinate),
             np.array(rgb),
-            np.array(raw_lidar)
+            np.array(raw_lidar),
+            np.array(calib)
         )
 
         return ret
 
     def load_specified_train(self, load_indices=None):
         # Load without data augmentation
-        labels, tag, voxel, doubled_voxel, rgb, raw_lidar = [], [], [], [], [], []
+        labels, tag, voxel, doubled_voxel, rgb, raw_lidar, calib = [], [], [], [], [], [], []
         voxel_size = np.array([cfg.VOXEL_Z_SIZE, cfg.VOXEL_Y_SIZE, cfg.VOXEL_X_SIZE], dtype=np.float32)
         double_voxel_size = 2 * voxel_size
 
@@ -362,6 +342,8 @@ class KittiLoader(object):
                 lidar = clip_by_projection(lidar, calib_file, cfg.IMAGE_HEIGHT, cfg.IMAGE_WIDTH)
 
                 raw_lidar.append(lidar)
+                calib.append(read_calib_mat(self.f_calib[load_index]))
+
                 labels.append([line for line in open(self.f_label[load_index], 'r').readlines()])
                 tag.append(self.data_tag[load_index])
                 voxel.append(voxelize(file = self.f_lidar[load_index], lidar = lidar, voxel_size = voxel_size, T = cfg.VOXEL_POINT_COUNT))
@@ -402,7 +384,8 @@ class KittiLoader(object):
             np.array(doubled_vox_number),
             np.array(doubled_vox_coordinate),
             np.array(rgb),
-            np.array(raw_lidar)
+            np.array(raw_lidar),
+            np.array(calib)
         )
 
         return ret
@@ -427,7 +410,7 @@ class KittiLoader(object):
         self.f_label = [self.f_label[i] for i in index]
         self.f_rgb = [self.f_rgb[i] for i in index]
         self.f_lidar = [self.f_lidar[i] for i in index]
-        # self.f_voxel = [self.f_voxel[i] for i in index]
+        self.f_calib = [self.f_calib[i] for i in index]
         self.data_tag = [self.data_tag[i] for i in index]
 
     def get_frame_info(self):

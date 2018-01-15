@@ -19,6 +19,34 @@ from utils.box_overlaps import *
 from misc_util import warn
 import time
 
+def read_calib_mat(calib_f):
+
+    with open(calib_f) as fi:
+        lines = fi.readlines()
+
+    obj = lines[2].strip().split(' ')[1:]
+    P2 = np.array(obj, dtype=np.float32)
+    P2 = np.reshape(P2, (3, 4))
+
+    P2 = np.vstack((P2, np.array([0,0,0,0])))
+
+    obj = lines[4].strip().split(' ')[1:]
+    R0 = np.array(obj, dtype=np.float32)
+    R0 = np.reshape(R0, (3, 3))
+    R0 = np.hstack((R0, np.array([[0],[0],[0]])))
+    R0 = np.vstack((R0, np.array([0,0,0,1])))
+
+    obj = lines[5].strip().split(' ')[1:]
+    Tr_velo_to_cam = np.array(obj, dtype=np.float32)
+    Tr_velo_to_cam = np.reshape(Tr_velo_to_cam, (3, 4))
+    Tr_velo_to_cam = np.vstack((Tr_velo_to_cam, np.array([0,0,0,1])))
+
+    # warn("P2: {} R0 :{} Tr: {}".format(P2, R0, Tr_velo_to_cam))
+
+    return {'P2' : P2,
+            'R0' : R0,
+            'Tr_velo2cam' : Tr_velo_to_cam}
+
 def lidar_to_bird_view(x, y, factor=1):
     a = (x - cfg.X_MIN) / cfg.VOXEL_X_SIZE * factor
     b = (y - cfg.Y_MIN) / cfg.VOXEL_Y_SIZE * factor
@@ -39,89 +67,117 @@ def angle_in_limit(angle):
     return angle
 
 
-def camera_to_lidar(x, y, z):
+def camera_to_lidar(x, y, z, calib_mat=None):
+    if calib_mat is not None:
+        R0 = calib_mat['R0']
+        Tr_velo_to_cam = calib_mat['Tr_velo2cam']
+    else:
+        R0 = cfg.MATRIX_R_RECT_0
+        Tr_velo_to_cam = cfg.MATRIX_T_VELO_2_CAM
+
     p = np.array([x, y, z, 1])
-    p = np.matmul(np.linalg.inv(np.array(cfg.MATRIX_R_RECT_0)), p)
-    p = np.matmul(np.linalg.inv(np.array(cfg.MATRIX_T_VELO_2_CAM)), p)
+    p = np.matmul(np.linalg.inv(np.array(R0)), p)
+    p = np.matmul(np.linalg.inv(np.array(Tr_velo_to_cam)), p)
     p = p[0:3]
     return tuple(p)
 
 
-def lidar_to_camera(x, y, z):
+def lidar_to_camera(x, y, z, calib_mat=None):
+    if calib_mat is not None:
+        R0 = calib_mat['R0']
+        Tr_velo_to_cam = calib_mat['Tr_velo2cam']
+    else:
+        R0 = cfg.MATRIX_R_RECT_0
+        Tr_velo_to_cam = cfg.MATRIX_T_VELO_2_CAM
+
     p = np.array([x, y, z, 1])
-    p = np.matmul(np.array(cfg.MATRIX_T_VELO_2_CAM), p)
-    p = np.matmul(np.array(cfg.MATRIX_R_RECT_0), p)
+    p = np.matmul(np.array(Tr_velo_to_cam), p)
+    p = np.matmul(np.array(R0), p)
     p = p[0:3]
     return tuple(p)
 
 
-def camera_to_lidar_point(points):
+def camera_to_lidar_point(points, calib_mat=None):
     # (N, 3) -> (N, 3)
+    if calib_mat is not None:
+        R0 = calib_mat['R0']
+        Tr_velo_to_cam = calib_mat['Tr_velo2cam']
+    else:
+        R0 = cfg.MATRIX_R_RECT_0
+        Tr_velo_to_cam = cfg.MATRIX_T_VELO_2_CAM
+
     N = points.shape[0]
     points = np.hstack([points, np.ones((N, 1))]).T  # (N,4) -> (4,N)
 
-    points = np.matmul(np.linalg.inv(np.array(cfg.MATRIX_R_RECT_0)), points)
+    points = np.matmul(np.linalg.inv(np.array(R0)), points)
     points = np.matmul(np.linalg.inv(
-        np.array(cfg.MATRIX_T_VELO_2_CAM)), points).T  # (4, N) -> (N, 4)
+        np.array(Tr_velo_to_cam)), points).T  # (4, N) -> (N, 4)
     points = points[:, 0:3]
     return points.reshape(-1, 3)
 
 
-def lidar_to_camera_point(points):
+def lidar_to_camera_point(points, calib_mat=None):
     # (N, 3) -> (N, 3)
+    if calib_mat is not None:
+        R0 = calib_mat['R0']
+        Tr_velo_to_cam = calib_mat['Tr_velo2cam']
+    else:
+        R0 = cfg.MATRIX_R_RECT_0
+        Tr_velo_to_cam = cfg.MATRIX_T_VELO_2_CAM
+
     N = points.shape[0]
     points = np.hstack([points, np.ones((N, 1))]).T
 
-    points = np.matmul(np.array(cfg.MATRIX_T_VELO_2_CAM), points)
-    points = np.matmul(np.array(cfg.MATRIX_R_RECT_0), points).T
+    points = np.matmul(np.array(Tr_velo_to_cam), points)
+    points = np.matmul(np.array(R0), points).T
     points = points[:, 0:3]
     return points.reshape(-1, 3)
 
 
-def camera_to_lidar_box(boxes):
+def camera_to_lidar_box(boxes, calib_mat=None):
     # (N, 7) -> (N, 7) x,y,z,h,w,l,r
     ret = []
     for box in boxes:
         x, y, z, h, w, l, ry = box
         (x, y, z), h, w, l, rz = camera_to_lidar(
-            x, y, z), h, w, l, -ry - np.pi / 2
+            x, y, z, calib_mat), h, w, l, -ry - np.pi / 2
         rz = angle_in_limit(rz)
         ret.append([x, y, z, h, w, l, rz])
     return np.array(ret).reshape(-1, 7)
 
 
-def lidar_to_camera_box(boxes):
+def lidar_to_camera_box(boxes, calib_mat=None):
     # (N, 7) -> (N, 7) x,y,z,h,w,l,r
     ret = []
     for box in boxes:
         x, y, z, h, w, l, rz = box
         (x, y, z), h, w, l, ry = lidar_to_camera(
-            x, y, z), h, w, l, -rz - np.pi / 2
+            x, y, z, calib_mat=calib_mat), h, w, l, -rz - np.pi / 2
         ry = angle_in_limit(ry)
         ret.append([x, y, z, h, w, l, ry])
     return np.array(ret).reshape(-1, 7)
 
 
-def center_to_corner_box2d(boxes_center, coordinate='lidar', check = False):
+def center_to_corner_box2d(boxes_center, coordinate='lidar', calib_mat=None, check = False):
     # (N, 5) -> (N, 4, 2)
     N = boxes_center.shape[0]
     boxes3d_center = np.zeros((N, 7))
     boxes3d_center[:, [0, 1, 4, 5, 6]] = boxes_center
     boxes3d_corner = center_to_corner_box3d(
-        boxes3d_center, coordinate=coordinate)
+        boxes3d_center, coordinate=coordinate, calib_mat=calib_mat)
 
     # if check == True:
     #     warn("center: {} corner: {}".format(boxes_center, boxes3d_corner))
     return boxes3d_corner[:, 0:4, 0:2]
 
 
-def center_to_corner_box3d(boxes_center, coordinate='lidar'):
+def center_to_corner_box3d(boxes_center, coordinate='lidar', calib_mat=None):
     # (N, 7) -> (N, 8, 3)
     N = boxes_center.shape[0]
     ret = np.zeros((N, 8, 3), dtype=np.float32)
 
     if coordinate == 'camera':
-        boxes_center = camera_to_lidar_box(boxes_center)
+        boxes_center = camera_to_lidar_box(boxes_center, calib_mat=calib_mat)
 
     for i in range(N):
         box = boxes_center[i]
@@ -148,7 +204,7 @@ def center_to_corner_box3d(boxes_center, coordinate='lidar'):
 
     if coordinate == 'camera':
         for idx in range(len(ret)):
-            ret[idx] = lidar_to_camera_point(ret[idx])
+            ret[idx] = lidar_to_camera_point(ret[idx], calib_mat=calib_mat)
 
     return ret
 
@@ -198,11 +254,11 @@ def anchor_to_standup_box2d(anchors):
     return anchor_standup
 
 
-def corner_to_center_box3d(boxes_corner, coordinate='camera'):
+def corner_to_center_box3d(boxes_corner, coordinate='camera', calib_mat=None):
     # (N, 8, 3) -> (N, 7) x,y,z,h,w,l,ry/z
     if coordinate == 'lidar':
         for idx in range(len(boxes_corner)):
-            boxes_corner[idx] = lidar_to_camera_point(boxes_corner[idx])
+            boxes_corner[idx] = lidar_to_camera_point(boxes_corner[idx], calib_mat=calib_mat)
     ret = []
     for roi in boxes_corner:
         if cfg.CORNER2CENTER_AVG:  # average version
@@ -270,23 +326,26 @@ def corner_to_center_box3d(boxes_corner, coordinate='camera'):
         ret.append([x, y, z, h, w, l, ry])
         # warn("z: {}".format(x))
     if coordinate == 'lidar':
-        ret = camera_to_lidar_box(np.array(ret))
+        ret = camera_to_lidar_box(np.array(ret), calib_mat=calib_mat)
 
     return np.array(ret)
 
 
 # this just for visulize and testing
-def lidar_box3d_to_camera_box(boxes3d, cal_projection=False):
+def lidar_box3d_to_camera_box(boxes3d, calib_mat=None, cal_projection=False):
     # (N, 7) -> (N, 4)/(N, 8, 2)  x,y,z,h,w,l,rz -> x1,y1,x2,y2/8*(x, y)
     num = len(boxes3d)
     boxes2d = np.zeros((num, 4), dtype=np.int32)
     projections = np.zeros((num, 8, 2), dtype=np.float32)
-    lidar_boxes3d_corner = center_to_corner_box3d(boxes3d, coordinate='lidar')
-    P2 = np.array(cfg.MATRIX_P2)
+    lidar_boxes3d_corner = center_to_corner_box3d(boxes3d, coordinate='lidar', calib_mat=calib_mat)
+    if calib_mat is not None:
+        P2 = calib_mat['P2']
+    else:
+        P2 = np.array(cfg.MATRIX_P2)
 
     for n in range(num):
         box3d = lidar_boxes3d_corner[n]
-        box3d = lidar_to_camera_point(box3d)
+        box3d = lidar_to_camera_point(box3d, calib_mat=calib_mat)
         points = np.hstack((box3d, np.ones((8, 1)))).T  # (8, 4) -> (4, 8)
         points = np.matmul(P2, points).T
         points[:, 0] /= points[:, 2]
@@ -326,7 +385,7 @@ def lidar_to_bird_view_img(lidar, factor=1):
     return birdview
 
 
-def draw_lidar_box3d_on_image(img, boxes3d, scores, gt_boxes3d=np.array([]),
+def draw_lidar_box3d_on_image(img, boxes3d, scores, calib_mat, gt_boxes3d=np.array([]),
                               color=(0, 255, 255), gt_color=(255, 0, 255), thickness=1):
     # Input:
     #   img: (h, w, 3)
@@ -334,8 +393,8 @@ def draw_lidar_box3d_on_image(img, boxes3d, scores, gt_boxes3d=np.array([]),
     #   scores
     #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
     img = img.copy()
-    projections = lidar_box3d_to_camera_box(boxes3d, cal_projection=True)
-    gt_projections = lidar_box3d_to_camera_box(gt_boxes3d, cal_projection=True)
+    projections = lidar_box3d_to_camera_box(boxes3d, calib_mat=calib_mat, cal_projection=True)
+    gt_projections = lidar_box3d_to_camera_box(gt_boxes3d, calib_mat=calib_mat, cal_projection=True)
 
     # draw projections
     for qs in projections:
@@ -395,15 +454,15 @@ def draw_lidar_box3d_on_image_test(img, boxes3d, scores, color=(0, 255, 255), th
 
     return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
-def draw_lidar_box3d_to_bbox2d_on_image(img, boxes3d, scores, gt_boxes3d=np.array([]), color=(0, 255, 255), gt_color=(255, 0, 255), thickness=1):
+def draw_lidar_box3d_to_bbox2d_on_image(img, boxes3d, scores, calib_mat, gt_boxes3d=np.array([]), color=(0, 255, 255), gt_color=(255, 0, 255), thickness=1):
     # Input:
     #   img: (h, w, 3)
     #   boxes3d (N, 7) [x, y, z, h, w, l, r]
     #   scores
     #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
     img = img.copy()
-    projections = lidar_box3d_to_camera_box(boxes3d, cal_projection=False)
-    gt_projections = lidar_box3d_to_camera_box(gt_boxes3d, cal_projection=False)
+    projections = lidar_box3d_to_camera_box(boxes3d, calib_mat, cal_projection=False)
+    gt_projections = lidar_box3d_to_camera_box(gt_boxes3d, calib_mat, cal_projection=False)
 
     # draw projections
     for pr in projections:
@@ -445,7 +504,7 @@ def draw_bbox2d_on_image(img, boxes2d, color=(0,255,255), thickness=1):
 
 
 
-def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, gt_boxes3d=np.array([]),
+def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, calib_mat, gt_boxes3d=np.array([]),
                                  color=(0, 255, 255), gt_color=(255, 0, 255), thickness=1, factor=1):
     # Input:
     #   birdview: (h, w, 3)
@@ -453,8 +512,8 @@ def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, gt_boxes3d=np.array(
     #   scores
     #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
     img = birdview.copy()
-    corner_boxes3d = center_to_corner_box3d(boxes3d, coordinate='lidar')
-    corner_gt_boxes3d = center_to_corner_box3d(gt_boxes3d, coordinate='lidar')
+    corner_boxes3d = center_to_corner_box3d(boxes3d, coordinate='lidar', calib_mat=calib_mat)
+    corner_gt_boxes3d = center_to_corner_box3d(gt_boxes3d, coordinate='lidar', calib_mat=calib_mat)
     # draw gt
     for box in corner_gt_boxes3d:
         x0, y0 = lidar_to_bird_view(*box[0, 0:2], factor=factor)
@@ -520,7 +579,7 @@ def draw_lidar_box3d_on_birdview_test(birdview, boxes3d, scores, color=(0, 255, 
     return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
 
-def label_to_gt_box3d(labels, cls='Car', coordinate='camera'):
+def label_to_gt_box3d(labels, cls='Car', coordinate='camera', calib_mats=None):
     # Input:
     #   label: (N, N')
     #   cls: 'Car' or 'Pedestrain' or 'Cyclist'
@@ -537,7 +596,7 @@ def label_to_gt_box3d(labels, cls='Car', coordinate='camera'):
     else:
         acc_cls = []
 
-    for label in labels:
+    for idx, label in enumerate(labels):
         boxes3d_a_label = []
         for line in label:
             ret = line.split()
@@ -546,7 +605,10 @@ def label_to_gt_box3d(labels, cls='Car', coordinate='camera'):
                 box3d = np.array([x, y, z, h, w, l, r])
                 boxes3d_a_label.append(box3d)
         if coordinate == 'lidar':
-            boxes3d_a_label = camera_to_lidar_box(np.array(boxes3d_a_label))
+            if calib_mats is not None:
+                boxes3d_a_label = camera_to_lidar_box(np.array(boxes3d_a_label), calib_mats[idx])
+            else: # temp
+                boxes3d_a_label = camera_to_lidar_box(np.array(boxes3d_a_label))
 
         boxes3d.append(np.array(boxes3d_a_label).reshape(-1, 7))
     return boxes3d
@@ -605,7 +667,7 @@ def label_to_num_obj(f_labels, cls='Car'):
                 num_obj = num_obj + 1
     return num_obj
 
-def box3d_to_label(batch_box3d, batch_cls, batch_score=[], include_score = False, coordinate='camera'):
+def box3d_to_label(batch_box3d, batch_cls, batch_calib, batch_score=[], include_score = False, coordinate='camera'):
     # Input:
     #   (N, N', 7) x y z h w l r
     #   (N, N')
@@ -618,18 +680,20 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], include_score = False
     # warn("shape: {} {} {}".format(np.shape(batch_box3d), np.shape(batch_cls), np.shape(batch_score)))
     if include_score:
         template = '{} ' + ' '.join(['{:.4f}' for i in range(15)]) + '\n'
-        for boxes, scores, clses in zip(batch_box3d, batch_score, batch_cls):
+        # warn("len calib {}".format(len(batch_calib)))
+        for boxes, scores, clses, calib_mat in zip(batch_box3d, batch_score, batch_cls, batch_calib):
             label = []
+            # warn("calib: {}".format(calib_mat))
             for box, score, cls in zip(boxes, scores, clses):
                 if coordinate == 'camera':
                     box3d = box
                     box2d = lidar_box3d_to_camera_box(
-                        camera_to_lidar_box(box[np.newaxis, :].astype(np.float32)), cal_projection=False)[0]
+                        camera_to_lidar_box(box[np.newaxis, :].astype(np.float32), calib_mat=calib_mat), calib_mat=calib_mat, cal_projection=False)[0]
                 else:
                     box3d = lidar_to_camera_box(
-                        box[np.newaxis, :].astype(np.float32))[0]
+                        box[np.newaxis, :].astype(np.float32), calib_mat=calib_mat)[0]
                     box2d = lidar_box3d_to_camera_box(
-                        box[np.newaxis, :].astype(np.float32), cal_projection=False)[0]
+                        box[np.newaxis, :].astype(np.float32), calib_mat=calib_mat, cal_projection=False)[0]
                 x, y, z, h, w, l, r = box3d
                 box3d = [h, w, l, x, y, z, r]
                 label.append(template.format(
@@ -637,19 +701,21 @@ def box3d_to_label(batch_box3d, batch_cls, batch_score=[], include_score = False
             batch_label.append(label)
     else:
         template = '{} ' + ' '.join(['{:.4f}' for i in range(14)]) + '\n'
-        for boxes, clses in zip(batch_box3d, batch_cls):
+        # warn("len calib {}".format(len(batch_calib)))
+
+        for boxes, clses, calib_mat in zip(batch_box3d, batch_cls, batch_calib):
+            # warn("calib: {}".format(calib_mat))
             label = []
             for box, cls in zip(boxes, clses):
                 if coordinate == 'camera':
                     box3d = box
-                    k = camera_to_lidar_box(box[np.newaxis, :].astype(np.float32))
                     box2d = lidar_box3d_to_camera_box(
-                        camera_to_lidar_box(box[np.newaxis, :].astype(np.float32)), cal_projection=False)[0]
+                        camera_to_lidar_box(box[np.newaxis, :].astype(np.float32), calib_mat=calib_mat), calib_mat=calib_mat, cal_projection=False)[0]
                 else:
                     box3d = lidar_to_camera_box(
-                        box[np.newaxis, :].astype(np.float32))[0]
+                        box[np.newaxis, :].astype(np.float32), calib_mat=calib_mat)[0]
                     box2d = lidar_box3d_to_camera_box(
-                        box[np.newaxis, :].astype(np.float32), cal_projection=False)[0]
+                        box[np.newaxis, :].astype(np.float32), calib_mat=calib_mat, cal_projection=False)[0]
                 x, y, z, h, w, l, r = box3d
                 box3d = [h, w, l, x, y, z, r]
                 label.append(template.format(cls, 0, 0, 0, *box2d, *box3d))
@@ -780,7 +846,7 @@ def cal_anchors():
 
     return anchors
 
-def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='lidar'):
+def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', calib_mats=None, coordinate='lidar'):
     # Input:
     #   labels: (N, N')
     #   feature_map_shape: (w, l)
@@ -791,7 +857,9 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
     #   targets (N, w, l, 14)
     # attention: cal IoU on birdview
     batch_size = labels.shape[0]
-    batch_gt_boxes3d = label_to_gt_box3d(labels, cls=cls, coordinate=coordinate)
+    # for idx in range(batch_size):
+    #     warn("{} {}".format(idx, calib_mats[idx]))
+    batch_gt_boxes3d = label_to_gt_box3d(labels, cls=cls, coordinate=coordinate, calib_mats=calib_mats)
     # defined in eq(1) in 2.2
     anchors_reshaped = anchors.reshape(-1, 7)
     # anchors_d = np.sqrt(anchors_reshaped[:, 4]**2 + anchors_reshaped[:, 5]**2)
@@ -819,7 +887,7 @@ def cal_rpn_target(labels, feature_map_shape, anchors, cls='Car', coordinate='li
             gj = int(gy_ratio)
 
             gt_box_origin = np.array([[0, 0, gw, gl, gr]])
-            gt_standup_2d_origin = corner_to_standup_box2d(center_to_corner_box2d(gt_box_origin, coordinate=coordinate))
+            gt_standup_2d_origin = corner_to_standup_box2d(center_to_corner_box2d(gt_box_origin, coordinate=coordinate, calib_mat=calib_mats[batch_id]))
             # warn("anchor: {}".format(gt_standup_2d_origin))
             best_iou = 0
             best_anchor = 0
@@ -994,13 +1062,13 @@ def point_transform(points, tx, ty, tz, rx=0, ry=0, rz=0):
     return points[:, 0:3]
 
 
-def box_transform(boxes, tx, ty, tz, r=0, coordinate='lidar'):
+def box_transform(boxes, tx, ty, tz, r=0, coordinate='lidar', calib_mat=None):
     # Input:
     #   boxes: (N, 7) x y z h w l rz/y
     # Output:
     #   boxes: (N, 7) x y z h w l rz/y
     boxes_corner = center_to_corner_box3d(
-        boxes, coordinate=coordinate)  # (N, 8, 3)
+        boxes, coordinate=coordinate, calib_mat=calib_mat)  # (N, 8, 3)
     for idx in range(len(boxes_corner)):
         if coordinate == 'lidar':
             boxes_corner[idx] = point_transform(
@@ -1009,8 +1077,7 @@ def box_transform(boxes, tx, ty, tz, r=0, coordinate='lidar'):
             boxes_corner[idx] = point_transform(
                 boxes_corner[idx], tx, ty, tz, ry=r)
 
-
-    return corner_to_center_box3d(boxes_corner, coordinate=coordinate)
+    return corner_to_center_box3d(boxes_corner, coordinate=coordinate, calib_mat=calib_mat)
 
 
 def cal_iou2d(box1, box2):
@@ -1107,7 +1174,7 @@ def cal_box2d_iou(boxes2d, gt_boxes2d):
     N1 = len(boxes2d)
     N2 = len(gt_boxes2d)
 
-    warn("N1 N2: {} {}".format(N1, N2))
+    # warn("N1 N2: {} {}".format(N1, N2))
     output = np.zeros((N1, N2), dtype=np.float32)
     for idx in range(N1):
         for idy in range(N2):
