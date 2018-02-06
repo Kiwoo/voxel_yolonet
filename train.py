@@ -18,7 +18,7 @@ from misc_util import *
 warn("test")
 
 parser = argparse.ArgumentParser(description='training')
-parser.add_argument('-i', '--max-epoch', type=int, nargs='?', default=100,
+parser.add_argument('-i', '--max-epoch', type=int, nargs='?', default=120,
                     help='max epoch')
 parser.add_argument('-n', '--tag', type=str, nargs='?', default='default',
                     help='set log tag')
@@ -47,11 +47,15 @@ warn("dir: {}".format(k))
 
 is_test = False
 if is_test == True:
-    dataset = 'training'
-    from utils.kitti_test_loader import KittiLoader
+    dataset = 'testing'
+    shuffle = True
+    from utils.kitti_loader_for_test import KittiLoader
     split_file = ''
+    valid_file = ''
 else:
     dataset = 'training'
+    shuffle = True
+
     from utils.kitti_loader import KittiLoader
     split_file = 'trainset.txt'
     valid_file = 'validset.txt'
@@ -63,8 +67,8 @@ def main(_):
     warn("main start")
     with tf.Graph().as_default():
         global save_model_dir
-        with KittiLoader(object_dir=os.path.join(dataset_dir, dataset), queue_size=10, require_shuffle=True, 
-                is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=6, split_file = split_file, valid_file = valid_file, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
+        with KittiLoader(object_dir=os.path.join(dataset_dir, dataset), queue_size=16, require_shuffle=shuffle, 
+                is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, split_file = split_file, valid_file = valid_file, multi_gpu_sum=cfg.GPU_USE_COUNT) as train_loader:
         # , \KittiLoader(object_dir=os.path.join(dataset_dir, 'testing'), queue_size=50, require_shuffle=True, 
         #         is_testset=False, batch_size=args.single_batch_size*cfg.GPU_USE_COUNT, use_multi_process_num=8, multi_gpu_sum=cfg.GPU_USE_COUNT) as valid_loader:
             
@@ -88,12 +92,12 @@ def main(_):
                     max_gradient_norm=5.0,
                     is_train=True,
                     alpha=1.5,
-                    beta=1,
+                    beta=1.0,
                     avail_gpus=cfg.GPU_AVAILABLE.split(',')
                 )
                 # param init/restore
                 if tf.train.get_checkpoint_state(save_model_dir):
-                    # model.saver.restore(sess, save_model_dir+'/checkpoint-00238950')#tf.train.latest_checkpoint(save_model_dir))
+                    # model.saver.restore(sess, save_model_dir+'/checkpoint-00343950')#tf.train.latest_checkpoint(save_model_dir))
                     model.saver.restore(sess, tf.train.latest_checkpoint(save_model_dir))
                     warn("loading done")
                 else:
@@ -107,7 +111,7 @@ def main(_):
                 summary_interval = 50
                 summary_image_interval = 50
                 save_model_interval = 50
-                validate_interval = 4000
+                validate_interval = 8000
 
 
                 # if is_test == True:
@@ -116,6 +120,30 @@ def main(_):
                 #         ret = model.test_step(sess, train_loader.load_specified(test_idx), output_path = save_result_dir, summary=True)
                 #         t1 = time.time()
                 #         warn("test: {:.2f}".format(t1-t0))
+
+                if is_test:                        
+                    total_iter = int(np.ceil(train_loader.validset_size / train_loader.batch_size))
+                    # idx = iter
+                    save_result_folder = os.path.join(save_result_dir, "test_result")
+                    mkdir_p(save_result_folder)
+                    for idx in range(total_iter):
+                        t0 = time.time()
+                        if train_loader.batch_size*(idx+1) > train_loader.validset_size:                                
+                            start_idx = train_loader.validset_size - train_loader.batch_size
+                            end_idx = train_loader.validset_size
+                        else:
+                            start_idx = train_loader.batch_size*idx
+                            end_idx = train_loader.batch_size*(idx+1)
+
+                        warn("start: {} end: {}".format(start_idx, end_idx))
+
+
+                        # ret = model.test_step(sess, train_loader.load_specified(np.arange(start_idx, end_idx)), output_path= save_result_folder, summary=True, visualize = True)
+                        ret = model.test_step(sess, train_loader.load(), output_path= save_result_folder, summary=True, visualize = True)
+                        t1= time.time()
+                        warn("test: {:.2f} sec | remaining {:.2f} sec {}/{}".format(t1-t0, (t1-t0)*(total_iter-idx), idx, total_iter))
+
+
                 
                 summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
 
@@ -143,8 +171,13 @@ def main(_):
                     ret = model.train_step(sess, train_loader.load(), train=True, summary=is_summary)
                     t1 = time.time()
                     warn("train: {}".format(t1-t0))
-                    print('train: {} / 1 : {}/{} @ epoch:{}/{} {:.2f} sec, remaining: {:.2f} min, loss: {} reg_loss: {} cls_loss: {} {}'.format(train_loader.progress, iter, 
-                        iter_per_epoch*args.max_epoch, model.epoch.eval(), args.max_epoch, t1-t0, (t1-t0)*(iter_per_epoch*args.max_epoch - iter)//60, ret[0], ret[1], ret[2], args.tag))
+                    # warn("reg loss: {}".format(ret[1]))
+                    # warn("corner loss: {}".format(ret[3]))
+                    # for box in range(len(ret[4][0])):
+                    #     warn("box {} : {}".format(box, ret[4][0][box]))
+                    # warn("indexes : {}".format(ret[4][0]))
+                    print('train: {:.2f} / 1 : {}/{} @ epoch:{}/{} {:.2f} sec, remaining: {:.2f} min, loss: {:.2f} corner_loss: {:.2f} reg_loss: {:.2f} cls_loss: {:.2f} {}'.format(train_loader.progress, iter, 
+                        iter_per_epoch*args.max_epoch, model.epoch.eval(), args.max_epoch, t1-t0, (t1-t0)*(iter_per_epoch*args.max_epoch - iter)//60, ret[0], ret[3], ret[1], ret[2], args.tag))
 
                     if is_summary:
                         summary_writer.add_summary(ret[-1], iter)

@@ -24,7 +24,7 @@ __C = edict()
 cfg = __C
 
 # for gpu allocation
-__C.GPU_AVAILABLE='0,1'
+__C.GPU_AVAILABLE='0,1,2,3'
 __C.GPU_USE_COUNT=len(__C.GPU_AVAILABLE.split(','))
 __C.GPU_MEMORY_FRACTION=1
 
@@ -173,8 +173,8 @@ if __C.DETECT_OBJ == 'Cyclist':
 
 # for rpn nms
 __C.RPN_NMS_POST_TOPK = 50
-__C.RPN_NMS_THRESH = 0.5
-__C.RPN_SCORE_THRESH = 0.70
+__C.RPN_NMS_THRESH = 0.7
+__C.RPN_SCORE_THRESH = 0.30
 
 # for 2d classifier patch
 __C.FALSE_PATCH_THRESH = 0.50

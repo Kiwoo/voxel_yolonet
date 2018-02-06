@@ -428,14 +428,14 @@ def draw_lidar_box3d_on_image(img, boxes3d, scores, calib_mat, gt_boxes3d=np.arr
 
     return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
-def draw_lidar_box3d_on_image_test(img, boxes3d, scores, color=(0, 255, 255), thickness=1):
+def draw_lidar_box3d_on_image_test(img, boxes3d, scores, calib_mat, color=(0, 255, 255), thickness=1):
     # Input:
     #   img: (h, w, 3)
     #   boxes3d (N, 7) [x, y, z, h, w, l, r]
     #   scores
     #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
     img = img.copy()
-    projections = lidar_box3d_to_camera_box(boxes3d, cal_projection=True)
+    projections = lidar_box3d_to_camera_box(boxes3d, calib_mat, cal_projection=True)
 
     # draw projections
     for qs in projections:
@@ -480,6 +480,29 @@ def draw_lidar_box3d_to_bbox2d_on_image(img, boxes3d, scores, calib_mat, gt_boxe
         y1 = gt[1]
         x2 = gt[2]
         y2 = gt[3]
+        cv2.line(img, (x1, y1), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x1, y1), (x2, y1), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x1, y2), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y2), (x2, y1), color, thickness, cv2.LINE_AA)
+
+
+    return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+
+def draw_lidar_box3d_to_bbox2d_on_image_test(img, boxes3d, scores, calib_mat, color=(0, 255, 255), thickness=1):
+    # Input:
+    #   img: (h, w, 3)
+    #   boxes3d (N, 7) [x, y, z, h, w, l, r]
+    #   scores
+    #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
+    img = img.copy()
+    projections = lidar_box3d_to_camera_box(boxes3d, calib_mat, cal_projection=False)
+
+    # draw projections
+    for pr in projections:
+        x1 = pr[0]
+        y1 = pr[1]
+        x2 = pr[2]
+        y2 = pr[3]
         cv2.line(img, (x1, y1), (x1, y2), color, thickness, cv2.LINE_AA)
         cv2.line(img, (x1, y1), (x2, y1), color, thickness, cv2.LINE_AA)
         cv2.line(img, (x2, y2), (x1, y2), color, thickness, cv2.LINE_AA)
@@ -550,14 +573,14 @@ def draw_lidar_box3d_on_birdview(birdview, boxes3d, scores, calib_mat, gt_boxes3
 
     return cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
-def draw_lidar_box3d_on_birdview_test(birdview, boxes3d, scores, color=(0, 255, 255), thickness=1, factor=1):
+def draw_lidar_box3d_on_birdview_test(birdview, boxes3d, scores, calib_mat, color=(0, 255, 255), thickness=1, factor=1):
     # Input:
     #   birdview: (h, w, 3)
     #   boxes3d (N, 7) [x, y, z, h, w, l, r]
     #   scores
     #   gt_boxes3d (N, 7) [x, y, z, h, w, l, r]
     img = birdview.copy()
-    corner_boxes3d = center_to_corner_box3d(boxes3d, coordinate='lidar')
+    corner_boxes3d = center_to_corner_box3d(boxes3d, coordinate='lidar', calib_mat=calib_mat)
     # draw detections
     for box in corner_boxes3d:
         x0, y0 = lidar_to_bird_view(*box[0, 0:2], factor=factor)
@@ -1142,7 +1165,7 @@ def cal_iou3d(box1, box2):
     return intersect.area * z_intersect / (c1.area * h1 + c2.area * h2 - intersect.area * z_intersect)
 
 
-def cal_box3d_iou(boxes3d, gt_boxes3d, cal_3d=0):
+def cal_box3d_iou(boxes3d, gt_boxes3d, cal_3d=True):
     # Inputs:
     #   boxes3d: (N1, 7) x,y,z,h,w,l,r
     #   gt_boxed3d: (N2, 7) x,y,z,h,w,l,r
@@ -1162,6 +1185,28 @@ def cal_box3d_iou(boxes3d, gt_boxes3d, cal_3d=0):
                     cal_iou2d(boxes3d[idx, [0, 1, 4, 5, 6]], gt_boxes3d[idy, [0, 1, 4, 5, 6]]))
 
     return output
+
+def cal_box3d_iou_match(boxes3d, gt_boxes3d, cal_3d=True):
+    # Inputs:
+    #   boxes3d: (N1, 7) x,y,z,h,w,l,r
+    #   gt_boxed3d: (N2, 7) x,y,z,h,w,l,r
+    # Outputs:
+    #   iou: (N1, N2)
+    N1 = len(boxes3d)
+    N2 = len(gt_boxes3d)
+    assert(N1 == N2)
+    output = np.zeros((N1, 1), dtype=np.float32)
+
+    for idx in range(N1):
+        if cal_3d:
+            output[idx, 1] = float(
+                    cal_iou3d(boxes3d[idx], gt_boxes3d[idx]))
+        else:
+            output[idx, 1] = float(
+                    cal_iou2d(boxes3d[idx, [0, 1, 4, 5, 6]], gt_boxes3d[iidxdy, [0, 1, 4, 5, 6]]))
+    return output
+
+
 
 
 def cal_box2d_iou(boxes2d, gt_boxes2d):

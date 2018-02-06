@@ -28,10 +28,10 @@ args = parser.parse_args()
 def data_augmentation(f_lidar, f_label, calib_mat, img_width, img_height):
 
     t0 = time.time()
-    shift_x = [-1.0, 1.0]
-    shift_y = [-1.0, 1.0]
-    shift_z = [-0.1, 0.1]
-    angle_r = [-np.pi/5, np.pi/5]
+    shift_x = [-5.0, 5.0]
+    shift_y = [-5.0, 5.0]
+    shift_z = [-0.3, 0.3]
+    angle_r = [-np.pi/4, np.pi/4]
     scale = [0.95, 1.05] 
     drop_rate = [0.01, 0.15]
 
@@ -59,85 +59,80 @@ def data_augmentation(f_lidar, f_label, calib_mat, img_width, img_height):
 
     lidar = lidar[:end_points]
 
-    choice = np.random.randint(2)
+    choice = np.random.randint(1, 10)
 
-    if choice == 0:
+    if choice >= 8:
         # global shift, rotation
         t_x = np.random.uniform(shift_x[0], shift_x[1])
         t_y = np.random.uniform(shift_y[0], shift_y[1])
         angle = np.random.uniform(angle_r[0], angle_r[1])
 
-        t_z = 0 #np.random.uniform(shift_z[0], shift_z[1])
+        t_z = np.random.uniform(shift_z[0], shift_z[1])
 
         lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=t_x, ty=t_y, tz=t_z, rx=0, ry=0, rz=angle)
 
         lidar_center_gt_box3d = box_transform(gt_box3d, tx=t_x, ty=t_y, tz=t_z, r=angle, coordinate='lidar', calib_mat=calib_mat)
+        # gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
+
+        factor = np.random.uniform(scale[0], scale[1])
+        lidar[:, 0:3] = lidar[:, 0:3] * factor
+        lidar_center_gt_box3d[:, 0:6] = lidar_center_gt_box3d[:, 0:6] * factor
         gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
 
-    # elif choice == 1:
-    #     # global rotation
-    #     angle = np.random.uniform(angle_r[0], angle_r[1])
-
-    #     lidar[:, 0:3] = point_transform(lidar[:, 0:3], tx=0, ty=0, tz=0, rx=0, ry=0, rz=angle)
-
-    #     lidar_center_gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=angle, coordinate='lidar')
-    #     gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d)
-
-        # gt_box3d = box_transform(gt_box3d, tx=0, ty=0, tz=0, r=-angle, coordinate='camera')
-
-    elif choice == 1:
+    else:#if choice == 1:
         # local shift, rotation
         lidar_center_gt_box3d = gt_box3d
-        if len(lidar_center_gt_box3d) < 15:
-            lidar_corner_gt_box3d = center_to_corner_box3d(
-                lidar_center_gt_box3d, coordinate='lidar', calib_mat=calib_mat)
-            changed = False
-            for idx in range(len(lidar_corner_gt_box3d)):
-                # TODO: precisely gather the point
-                is_collision = True
-                _count = 0
-                # warn("check :{}".format(idx))
-                while is_collision and _count < 10:
-                    t_rz = np.random.uniform(-np.pi / 8, np.pi / 8)
-                    t_x = 2*np.random.normal()
-                    t_y = 2*np.random.normal()
-                    t_z = np.random.normal()
-                    # check collision
-                    # warn("shape: {}".format(np.shape(lidar_center_gt_box3d[[idx]])))
-                    tmp = box_transform(
-                        lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar', calib_mat=calib_mat)
-                    is_collision = False
-                    for idy in range(idx):
-                        x1, y1, w1, l1, r1 = tmp[0][[0, 1, 4, 5, 6]]
-                        x2, y2, w2, l2, r2 = lidar_center_gt_box3d[idy][[
-                            0, 1, 4, 5, 6]]
-                        iou = cal_iou2d(np.array([x1, y1, w1, l1, r1], dtype=np.float32),
-                                        np.array([x2, y2, w2, l2, r2], dtype=np.float32))
-                        if iou > 0:
-                            is_collision = True
-                            _count += 1
-                            break
-                if not is_collision:
-                    box_corner = lidar_corner_gt_box3d[idx]
-                    minx = np.min(box_corner[:, 0])
-                    miny = np.min(box_corner[:, 1])
-                    minz = np.min(box_corner[:, 2])
-                    maxx = np.max(box_corner[:, 0])
-                    maxy = np.max(box_corner[:, 1])
-                    maxz = np.max(box_corner[:, 2])
-                    bound_x = np.logical_and(
-                        lidar[:, 0] >= minx, lidar[:, 0] <= maxx)
-                    bound_y = np.logical_and(
-                        lidar[:, 1] >= miny, lidar[:, 1] <= maxy)
-                    bound_z = np.logical_and(
-                        lidar[:, 2] >= minz, lidar[:, 2] <= maxz)
-                    bound_box = np.logical_and(
-                        np.logical_and(bound_x, bound_y), bound_z)
-                    lidar[bound_box, 0:3] = point_transform(
-                        lidar[bound_box, 0:3], t_x, t_y, t_z, rz=t_rz)
-                    lidar_center_gt_box3d[idx] = box_transform(
-                        lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar', calib_mat=calib_mat)
-                    changed = True
+        lidar_corner_gt_box3d = center_to_corner_box3d(
+            lidar_center_gt_box3d, coordinate='lidar', calib_mat=calib_mat)
+        changed = False
+        for idx in range(len(lidar_corner_gt_box3d)):
+            # TODO: precisely gather the point
+            is_collision = True
+            _count = 0
+            # warn("check :{}".format(idx))
+            while is_collision and _count < 100:
+                t_rz = np.random.uniform(-np.pi / 10, np.pi / 10)
+                t_x = 5*np.random.normal()
+                t_y = 5*np.random.normal()
+                t_z = np.random.normal()
+                factor = np.random.uniform(scale[0], scale[1])
+                # check collision
+                # warn("shape: {}".format(np.shape(lidar_center_gt_box3d[[idx]])))
+                tmp = box_transform(
+                    lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar', calib_mat=calib_mat)
+                tmp[0][0:6] = tmp[0][0:6] * factor
+                is_collision = False
+                for idy in range(idx):
+                    x1, y1, w1, l1, r1 = tmp[0][[0, 1, 4, 5, 6]]
+                    x2, y2, w2, l2, r2 = lidar_center_gt_box3d[idy][[
+                        0, 1, 4, 5, 6]]
+                    iou = cal_iou2d(np.array([x1, y1, w1, l1, r1], dtype=np.float32),
+                                    np.array([x2, y2, w2, l2, r2], dtype=np.float32))
+                    if iou > 0:
+                        is_collision = True
+                        _count += 1
+                        break
+            if not is_collision:
+                box_corner = lidar_corner_gt_box3d[idx]
+                minx = np.min(box_corner[:, 0])
+                miny = np.min(box_corner[:, 1])
+                minz = np.min(box_corner[:, 2])
+                maxx = np.max(box_corner[:, 0])
+                maxy = np.max(box_corner[:, 1])
+                maxz = np.max(box_corner[:, 2])
+                bound_x = np.logical_and(
+                    lidar[:, 0] >= minx, lidar[:, 0] <= maxx)
+                bound_y = np.logical_and(
+                    lidar[:, 1] >= miny, lidar[:, 1] <= maxy)
+                bound_z = np.logical_and(
+                    lidar[:, 2] >= minz, lidar[:, 2] <= maxz)
+                bound_box = np.logical_and(
+                    np.logical_and(bound_x, bound_y), bound_z)
+                lidar[bound_box, 0:3] = point_transform(
+                    lidar[bound_box, 0:3], t_x, t_y, t_z, rz=t_rz)
+                lidar_center_gt_box3d[idx] = box_transform(
+                    lidar_center_gt_box3d[[idx]], t_x, t_y, t_z, t_rz, 'lidar', calib_mat=calib_mat)
+                changed = True
         # if changed == True and len(lidar_center_gt_box3d) == 1:
         #     warn("changed: {} {} {} {} {} -> {}".format(len(lidar_center_gt_box3d), t_x, t_y, t_z, t_rz, lidar_center_gt_box3d[0]))
         # else:
@@ -146,12 +141,12 @@ def data_augmentation(f_lidar, f_label, calib_mat, img_width, img_height):
         gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
         # warn("gt shape after: {}".format(np.shape(gt_box3d)))
 
-    else:
-        # global scaling
-        factor = np.random.uniform(scale[0], scale[1])
-        lidar[:, 0:3] = lidar[:, 0:3] * factor
-        lidar_center_gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
-        gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
+    # else:
+    #     # global scaling
+    #     factor = np.random.uniform(scale[0], scale[1])
+    #     lidar[:, 0:3] = lidar[:, 0:3] * factor
+    #     lidar_center_gt_box3d[:, 0:6] = gt_box3d[:, 0:6] * factor
+    #     gt_box3d = lidar_to_camera_box(lidar_center_gt_box3d, calib_mat=calib_mat)
 
     # To clip after rotation and translation
 
