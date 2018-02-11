@@ -1,5 +1,7 @@
 # voxel_yolonet
 
+Reproducing VoxelNet from Apple, forked from https://github.com/jeasinema/VoxelNet-tensorflow
+Adding YOLO-structure
 
 ## SETTING 
 
