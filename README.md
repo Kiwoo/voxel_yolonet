@@ -5,6 +5,9 @@ Adding YOLO-structure
 
 ## SETTING 
 
+### Preparing for final upload
+Log: Aug 13, 2018, Monday
+
 ### Requirements may include:
 
 - python 3.5
